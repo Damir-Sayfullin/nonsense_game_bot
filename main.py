@@ -478,6 +478,7 @@ async def leave_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     if player_count == 0:
         cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
+        cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
         await query.edit_message_text("👋 Ты вышел из комнаты. Комната удалена.")
         conn.commit()
         conn.close()
@@ -496,6 +497,7 @@ async def leave_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             await query.edit_message_text("👋 Ты вышел из комнаты.")
         
+        # Не удаляем game_messages - это позволяет отредактировать старое сообщение при присоединении
         conn.commit()
         conn.close()
         
