@@ -128,7 +128,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     keyboard = [
         [InlineKeyboardButton("🎮 Новая игра", callback_data='new_game')],
-        [InlineKeyboardButton("📋 Правила", callback_data='rules')],
         [InlineKeyboardButton("🔑 Присоединиться по коду", callback_data='join_by_code')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -157,10 +156,75 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 Каждый получит свою уникальную смешную историю, составленную из всех ответов!
 
 Готовы? Нажимайте "Новая игра" и начинайте веселиться! 🎮"""
-    await update.callback_query.edit_message_text(
-        text=rules_text,
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text=rules_text,
+            parse_mode='HTML'
+        )
+    else:
+        await update.message.reply_text(
+            text=rules_text,
+            parse_mode='HTML'
+        )
+
+async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reset broken game (admin only)"""
+    user_id = update.effective_user.id
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # Find all games where this user is admin
+    cursor.execute('''
+        SELECT g.game_id, g.room_code, g.status FROM games g
+        JOIN game_players gp ON g.game_id = gp.game_id
+        WHERE gp.user_id = ? AND gp.is_admin = 1
+    ''', (user_id,))
+    
+    games = cursor.fetchall()
+    
+    if not games:
+        await update.message.reply_text("❌ Ты не являешься администратором ни одной комнаты.")
+        conn.close()
+        return
+    
+    if len(games) > 1:
+        await update.message.reply_text("⚠️ Ты администратор нескольких комнат. Используй /reset в комнате, которую хочешь сбросить.")
+        conn.close()
+        return
+    
+    game_id, room_code, status = games[0]
+    
+    # Reset game: change status to waiting, clear question data
+    cursor.execute('''
+        UPDATE games SET status = 'waiting', current_question_idx = 0
+        WHERE game_id = ?
+    ''', (game_id,))
+    
+    cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
+    cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (game_id,))
+    
+    # Reset all players to waiting state
+    cursor.execute('''
+        UPDATE game_players SET awaiting_question_idx = -1
+        WHERE game_id = ?
+    ''', (game_id,))
+    
+    conn.commit()
+    conn.close()
+    
+    await update.message.reply_text(
+        f"✅ <b>Игра сброшена!</b>\n\n"
+        f"🔑 Код комнаты: <code>{room_code}</code>\n\n"
+        f"Теперь можешь начать новую игру.",
         parse_mode='HTML'
     )
+    
+    # Update room players display
+    set_room_code_in_context(context, room_code)
+    context.user_data['game_id'] = game_id
+    await update_room_players(game_id, room_code, context)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button clicks"""
@@ -1075,6 +1139,8 @@ def main() -> None:
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("rules", rules))
+    app.add_handler(CommandHandler("reset", reset_game))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
     app.add_handler(CallbackQueryHandler(button_handler))
