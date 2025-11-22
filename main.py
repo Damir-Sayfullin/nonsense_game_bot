@@ -577,6 +577,7 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def send_question_to_players(game_id, question_idx, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send current question to all players"""
+    logger.info(f"[SEND_QUESTION_TO_PLAYERS] Called with game_id={game_id}, question_idx={question_idx}, total_questions={len(QUESTIONS)}")
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -587,9 +588,12 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     players = cursor.fetchall()
     
     if question_idx >= len(QUESTIONS):
+        logger.info(f"[SEND_QUESTION_TO_PLAYERS] All questions answered! Calling generate_stories")
         conn.close()
         await generate_stories(game_id, context)
         return
+    
+    logger.info(f"[SEND_QUESTION_TO_PLAYERS] Sending question {question_idx} to {len(players)} players")
     
     question = QUESTIONS[question_idx]
     
