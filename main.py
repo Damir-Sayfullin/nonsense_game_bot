@@ -757,6 +757,11 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     all_answers = cursor.fetchall()
     
+    cursor.execute('''
+        SELECT room_code FROM games WHERE game_id = ?
+    ''', (game_id,))
+    room_code = cursor.fetchone()[0]
+    
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
     conn.commit()
     conn.close()
@@ -785,6 +790,16 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         except TelegramError as e:
             logger.error(f"Failed to send stories to {user_id}: {e}")
+    
+    # Clear game messages so update_room_players sends new messages instead of editing
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
+    conn.commit()
+    conn.close()
+    
+    # Show room status with player list
+    await update_room_players(game_id, room_code, context)
 
 def build_rotated_story(all_answers, story_num, num_players, player_ids):
     """Build a story with rotated player order"""
