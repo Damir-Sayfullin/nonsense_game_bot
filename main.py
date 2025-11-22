@@ -169,7 +169,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Reset broken game (admin only)"""
+    """Reset broken game - delete room entirely (admin only)"""
     user_id = update.effective_user.id
     
     conn = sqlite3.connect(DB_FILE)
@@ -177,7 +177,7 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     
     # Find all games where this user is admin
     cursor.execute('''
-        SELECT g.game_id, g.room_code, g.status FROM games g
+        SELECT g.game_id, g.room_code FROM games g
         JOIN game_players gp ON g.game_id = gp.game_id
         WHERE gp.user_id = ? AND gp.is_admin = 1
     ''', (user_id,))
@@ -190,41 +190,30 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     
     if len(games) > 1:
-        await update.message.reply_text("⚠️ Ты администратор нескольких комнат. Используй /reset в комнате, которую хочешь сбросить.")
+        await update.message.reply_text("⚠️ Ты администратор нескольких комнат. Используй /reset в комнате, которую хочешь удалить.")
         conn.close()
         return
     
-    game_id, room_code, status = games[0]
+    game_id, room_code = games[0]
     
-    # Reset game: change status to waiting, clear question data
-    cursor.execute('''
-        UPDATE games SET status = 'waiting', current_question_idx = 0
-        WHERE game_id = ?
-    ''', (game_id,))
-    
+    # Delete all game data
     cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
     cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (game_id,))
-    
-    # Reset all players to waiting state
-    cursor.execute('''
-        UPDATE game_players SET awaiting_question_idx = -1
-        WHERE game_id = ?
-    ''', (game_id,))
+    cursor.execute('DELETE FROM game_players WHERE game_id = ?', (game_id,))
+    cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
     
     conn.commit()
     conn.close()
     
+    # Clear room code from context
+    context.user_data.pop('room_code', None)
+    context.user_data.pop('game_id', None)
+    
     await update.message.reply_text(
-        f"✅ <b>Игра сброшена!</b>\n\n"
-        f"🔑 Код комнаты: <code>{room_code}</code>\n\n"
-        f"Теперь можешь начать новую игру.",
+        f"✅ <b>Комната удалена!</b>\n\n"
+        f"Ты вышел из комнаты <code>{room_code}</code>.",
         parse_mode='HTML'
     )
-    
-    # Update room players display
-    set_room_code_in_context(context, room_code)
-    context.user_data['game_id'] = game_id
-    await update_room_players(game_id, room_code, context)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button clicks"""
