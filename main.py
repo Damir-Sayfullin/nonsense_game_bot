@@ -365,6 +365,19 @@ async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room
     ''', (old_game_id,))
     created_by = cursor.fetchone()[0]
     
+    # Copy players from old game to preserve admin status
+    cursor.execute('''
+        SELECT user_id, username, first_name, is_admin FROM game_players 
+        WHERE game_id = ? ORDER BY joined_at
+    ''', (old_game_id,))
+    players = cursor.fetchall()
+    
+    # Delete old game data to free up the room_code for reuse
+    cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (old_game_id,))
+    cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (old_game_id,))
+    cursor.execute('DELETE FROM game_players WHERE game_id = ?', (old_game_id,))
+    cursor.execute('DELETE FROM games WHERE game_id = ?', (old_game_id,))
+    
     # Create new game with same room code
     cursor.execute('''
         INSERT INTO games (room_code, created_by, status, current_question_idx)
@@ -373,13 +386,7 @@ async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room
     
     new_game_id = cursor.lastrowid
     
-    # Copy players from old game to new game with admin status preserved
-    cursor.execute('''
-        SELECT user_id, username, first_name, is_admin FROM game_players 
-        WHERE game_id = ? ORDER BY joined_at
-    ''', (old_game_id,))
-    
-    players = cursor.fetchall()
+    # Add players to new game with preserved admin status
     for user_id, username, first_name, is_admin in players:
         cursor.execute('''
             INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
