@@ -133,14 +133,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start_new_game(query, context)
     elif query.data == 'rules':
         await rules(update, context)
-    elif query.data == 'join_by_code':
-        await ask_for_room_code(query, context)
     elif query.data == 'start_game':
         await start_game_session(query, context)
     elif query.data == 'leave_game':
         await leave_game(query, context)
-    elif query.data.startswith('answer_'):
-        await handle_answer(query, context)
 
 def get_room_code_from_context(context):
     """Get room code from user context"""
@@ -193,13 +189,22 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode='HTML'
     )
 
-async def ask_for_room_code(query, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Ask user for room code"""
-    await query.edit_message_text(
-        text="🔑 <b>Напиши код комнаты</b> (4 буквы/цифры)\n\n"
-             "Пример: <code>ABC1</code>",
-        parse_mode='HTML'
-    )
+async def ask_for_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Ask user for room code - entry point for conversation"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text(
+            text="🔑 <b>Напиши код комнаты</b> (4 буквы/цифры)\n\n"
+                 "Пример: <code>ABC1</code>",
+            parse_mode='HTML'
+        )
+    else:
+        await update.message.reply_text(
+            text="🔑 <b>Напиши код комнаты</b> (4 буквы/цифры)\n\n"
+                 "Пример: <code>ABC1</code>",
+            parse_mode='HTML'
+        )
     return WAITING_FOR_ROOM_CODE
 
 async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -541,12 +546,13 @@ def main() -> None:
             WAITING_FOR_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
             WAITING_FOR_ROOM_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_room_code)]
         },
-        fallbacks=[]
+        fallbacks=[],
+        per_message=False
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(conv_handler)
+    app.add_handler(CallbackQueryHandler(button_handler))
 
     logger.info("Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
