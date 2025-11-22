@@ -182,7 +182,6 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data['game_id'] = game_id
     
     keyboard = [
-        [InlineKeyboardButton("➕ Пригласить друзей", callback_data='copy_code')],
         [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
         [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
     ]
@@ -270,8 +269,6 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     set_room_code_in_context(context, room_code)
     
     keyboard = [
-        [InlineKeyboardButton("➕ Приглас друзей", callback_data='copy_code')],
-        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
         [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -621,11 +618,18 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         story_text = build_rotated_story(all_answers, story_num, num_players, player_ids)
         all_stories += f"{story_text}\n\n"
     
+    keyboard = [
+        [InlineKeyboardButton("▶️ Начать новую игру", callback_data='new_game')],
+        [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     for player_id, user_id, first_name in players:
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=all_stories,
+                text=f"{all_stories}\n\nДобавляйте друзей по коду и играйте снова!",
+                reply_markup=reply_markup,
                 parse_mode='HTML'
             )
         except TelegramError as e:
