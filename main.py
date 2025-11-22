@@ -438,8 +438,33 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     set_room_code_in_context(context, room_code)
     context.user_data['game_id'] = game_id
     
-    # Just update room players with the full list - no separate join message
-    logger.info(f"[RECEIVE_ROOM_CODE] Player {user_id} joined game {game_id} with code {room_code}")
+    # Send confirmation message first
+    keyboard = [
+        [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = await update.message.reply_text(
+        text=f"🎮 <b>Присоединился!</b>\n\n"
+             f"🔑 Код: <code>{room_code}</code>\n\n"
+             f"Жди, когда начнётся игра!",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+    
+    # Store message ID for this player
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO game_messages (game_id, user_id, message_id)
+        VALUES (?, ?, ?)
+    ''', (game_id, user_id, message.message_id))
+    conn.commit()
+    conn.close()
+    
+    logger.info(f"[RECEIVE_ROOM_CODE] Player {user_id} joined game {game_id} with code {room_code}, message_id={message.message_id}")
+    
+    # Update room players - will edit the message we just sent
     await update_room_players(game_id, room_code, context)
     
     return ConversationHandler.END
