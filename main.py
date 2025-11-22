@@ -804,19 +804,12 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         story_text = build_rotated_story(all_answers, story_num, num_players, player_ids)
         all_stories += f"{story_text}\n\n"
     
-    keyboard = [
-        [InlineKeyboardButton("▶️ Начать новую игру", callback_data='new_game')],
-        [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     logger.info(f"[GENERATE_STORIES] Sending stories to {num_players} players")
     for player_id, user_id, first_name in players:
         try:
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"{all_stories}\n\nДобавляйте друзей по коду и играйте снова!",
-                reply_markup=reply_markup,
                 parse_mode='HTML'
             )
             logger.info(f"[GENERATE_STORIES] Stories sent to {first_name} (user_id={user_id})")
