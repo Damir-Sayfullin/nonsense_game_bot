@@ -137,6 +137,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await ask_for_room_code(query, context)
     elif query.data == 'start_game':
         await start_game_session(query, context)
+    elif query.data == 'leave_game':
+        await leave_game(query, context)
     elif query.data.startswith('answer_'):
         await handle_answer(query, context)
 
@@ -175,8 +177,9 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_room_code_in_context(context, room_code)
     
     keyboard = [
-        [InlineKeyboardButton("➕ Приглас друзей", callback_data='copy_code')],
-        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')]
+        [InlineKeyboardButton("➕ Пригласить друзей", callback_data='copy_code')],
+        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
+        [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -250,7 +253,8 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     keyboard = [
         [InlineKeyboardButton("➕ Приглас друзей", callback_data='copy_code')],
-        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')]
+        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
+        [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -266,6 +270,57 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     
     return ConversationHandler.END
+
+async def leave_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Leave the game room"""
+    room_code = get_room_code_from_context(context)
+    user_id = query.from_user.id
+    
+    if not room_code:
+        await query.edit_message_text("❌ Комната не найдена")
+        return
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT game_id, created_by FROM games 
+        WHERE room_code = ? AND status = 'waiting'
+    ''', (room_code,))
+    
+    result = cursor.fetchone()
+    if not result:
+        await query.edit_message_text("❌ Комната не найдена или игра уже началась")
+        conn.close()
+        return
+    
+    game_id, created_by = result
+    
+    cursor.execute('''
+        DELETE FROM game_players WHERE game_id = ? AND user_id = ?
+    ''', (game_id, user_id))
+    
+    cursor.execute('SELECT COUNT(*) FROM game_players WHERE game_id = ?', (game_id,))
+    player_count = cursor.fetchone()[0]
+    
+    if player_count == 0:
+        cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
+        await query.edit_message_text("👋 Ты вышел из комнаты. Комната удалена.")
+    else:
+        if user_id == created_by:
+            cursor.execute('''
+                SELECT user_id FROM game_players WHERE game_id = ? ORDER BY joined_at LIMIT 1
+            ''', (game_id,))
+            new_creator = cursor.fetchone()[0]
+            cursor.execute('UPDATE games SET created_by = ? WHERE game_id = ?', (new_creator, game_id))
+            await query.edit_message_text("👋 Ты вышел из комнаты. Новый создатель - следующий игрок.")
+        else:
+            await query.edit_message_text("👋 Ты вышел из комнаты.")
+    
+    conn.commit()
+    conn.close()
+    
+    context.user_data.pop('room_code', None)
 
 async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start the game"""
