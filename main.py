@@ -2,7 +2,8 @@
 import logging
 import os
 import sqlite3
-from datetime import datetime
+import random
+import string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.error import TelegramError
@@ -23,7 +24,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (
             game_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id INTEGER,
+            room_code TEXT UNIQUE,
             created_by INTEGER,
             status TEXT,
             current_question_idx INTEGER DEFAULT 0,
@@ -55,9 +56,23 @@ def init_db():
         )
     ''')
     
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS game_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER,
+            user_id INTEGER,
+            message_id INTEGER,
+            FOREIGN KEY (game_id) REFERENCES games(game_id)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
     logger.info("Database initialized")
+
+def generate_room_code():
+    """Generate random room code"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
 
 QUESTIONS = [
     "Какой?",
@@ -69,12 +84,14 @@ QUESTIONS = [
 ]
 
 WAITING_FOR_ANSWER = 1
+WAITING_FOR_ROOM_CODE = 2
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start command"""
     keyboard = [
-        [InlineKeyboardButton("Новая игра", callback_data='new_game')],
-        [InlineKeyboardButton("Правила", callback_data='rules')]
+        [InlineKeyboardButton("🎮 Новая игра", callback_data='new_game')],
+        [InlineKeyboardButton("📋 Правила", callback_data='rules')],
+        [InlineKeyboardButton("🔑 Присоединиться по коду", callback_data='join_by_code')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -91,7 +108,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 Это легко и весело! Вот что нужно делать:
 
 📝 <b>Как это работает:</b>
-• Пригласи друзей в игру (минимум 2 человека)
+• Создай новую игру или присоединись по коду
 • По очереди все отвечают на вопросы
 • Главное — никто не видит ответов других! 🤐
 
@@ -116,25 +133,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start_new_game(query, context)
     elif query.data == 'rules':
         await rules(update, context)
-    elif query.data == 'join_game':
-        await join_game(query, context)
+    elif query.data == 'join_by_code':
+        await ask_for_room_code(query, context)
     elif query.data == 'start_game':
         await start_game_session(query, context)
     elif query.data.startswith('answer_'):
         await handle_answer(query, context)
 
+def get_room_code_from_context(context):
+    """Get room code from user context"""
+    return context.user_data.get('room_code')
+
+def set_room_code_in_context(context, code):
+    """Set room code in user context"""
+    context.user_data['room_code'] = code
+
 async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Create a new game"""
+    room_code = generate_room_code()
+    
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    chat_id = query.message.chat_id
     user_id = query.from_user.id
     
     cursor.execute('''
-        INSERT INTO games (chat_id, created_by, status, current_question_idx)
+        INSERT INTO games (room_code, created_by, status, current_question_idx)
         VALUES (?, ?, ?, ?)
-    ''', (chat_id, user_id, 'waiting', 0))
+    ''', (room_code, user_id, 'waiting', 0))
     
     game_id = cursor.lastrowid
     
@@ -146,43 +172,56 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     conn.commit()
     conn.close()
     
-    context.chat_data['game_id'] = game_id
+    set_room_code_in_context(context, room_code)
     
     keyboard = [
-        [InlineKeyboardButton("Присоединиться", callback_data='join_game')],
-        [InlineKeyboardButton("Начать игру", callback_data='start_game')]
+        [InlineKeyboardButton("➕ Приглас друзей", callback_data='copy_code')],
+        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        text=f"🎮 Новая игра создана!\n\nИгроков: 1 ({query.from_user.first_name})\n\nНужно минимум 2 игрока для начала.",
-        reply_markup=reply_markup
+        text=f"🎮 <b>Комната создана!</b>\n\n"
+             f"🔑 Код комнаты: <code>{room_code}</code>\n\n"
+             f"👥 Игроки (1):\n"
+             f"• {query.from_user.first_name}\n\n"
+             f"Скажи друзьям этот код, чтобы они присоединились!",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
     )
 
-async def join_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Join an existing game"""
-    chat_id = query.message.chat_id
-    user_id = query.from_user.id
+async def ask_for_room_code(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ask user for room code"""
+    await query.edit_message_text(
+        text="🔑 <b>Напиши код комнаты</b> (4 буквы/цифры)\n\n"
+             "Пример: <code>ABC1</code>",
+        parse_mode='HTML'
+    )
+    return WAITING_FOR_ROOM_CODE
+
+async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Receive room code and join game"""
+    if not update.message or not update.message.text:
+        return WAITING_FOR_ROOM_CODE
+    
+    room_code = update.message.text.strip().upper()
+    user_id = update.effective_user.id
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
     cursor.execute('''
         SELECT game_id FROM games 
-        WHERE chat_id = ? AND status = 'waiting'
-        ORDER BY created_at DESC LIMIT 1
-    ''', (chat_id,))
+        WHERE room_code = ? AND status = 'waiting'
+    ''', (room_code,))
     
     result = cursor.fetchone()
     if not result:
-        await query.edit_message_text("❌ Нет активной игры в этом чате.")
+        await update.message.reply_text("❌ Комната не найдена или игра уже началась.")
         conn.close()
-        return
+        return ConversationHandler.END
     
     game_id = result[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM game_players WHERE game_id = ?', (game_id,))
-    count = cursor.fetchone()[0]
     
     cursor.execute('''
         SELECT COUNT(*) FROM game_players 
@@ -190,58 +229,72 @@ async def join_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     ''', (game_id, user_id))
     
     if cursor.fetchone()[0] > 0:
-        await query.edit_message_text("❌ Вы уже присоединились к этой игре.")
+        await update.message.reply_text("❌ Ты уже в этой игре!")
         conn.close()
-        return
+        return ConversationHandler.END
     
     cursor.execute('''
         INSERT INTO game_players (game_id, user_id, username, first_name)
         VALUES (?, ?, ?, ?)
-    ''', (game_id, user_id, query.from_user.username, query.from_user.first_name))
-    
-    conn.commit()
+    ''', (game_id, user_id, update.effective_user.username, update.effective_user.first_name))
     
     cursor.execute('''
-        SELECT first_name FROM game_players WHERE game_id = ?
+        SELECT first_name FROM game_players WHERE game_id = ? ORDER BY joined_at
     ''', (game_id,))
     players = [row[0] for row in cursor.fetchall()]
     
+    conn.commit()
     conn.close()
     
-    context.chat_data['game_id'] = game_id
+    set_room_code_in_context(context, room_code)
     
     keyboard = [
-        [InlineKeyboardButton("Присоединиться", callback_data='join_game')],
-        [InlineKeyboardButton("Начать игру", callback_data='start_game')]
+        [InlineKeyboardButton("➕ Приглас друзей", callback_data='copy_code')],
+        [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     players_text = "\n".join([f"• {p}" for p in players])
     
-    await query.edit_message_text(
-        text=f"🎮 Игроки ({len(players)}):\n{players_text}\n\nМинимум 2 игрока для начала.",
-        reply_markup=reply_markup
+    message = await update.message.reply_text(
+        text=f"🎮 <b>Присоединился!</b>\n\n"
+             f"🔑 Код: <code>{room_code}</code>\n\n"
+             f"👥 Игроки ({len(players)}):\n{players_text}\n\n"
+             f"Жди, когда начнётся игра!",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
     )
+    
+    return ConversationHandler.END
 
 async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start the game"""
-    chat_id = query.message.chat_id
+    room_code = get_room_code_from_context(context)
+    user_id = query.from_user.id
+    
+    if not room_code:
+        await query.edit_message_text("❌ Комната не найдена")
+        return
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT game_id FROM games 
-        WHERE chat_id = ? AND status = 'waiting'
-        ORDER BY created_at DESC LIMIT 1
-    ''', (chat_id,))
+        SELECT game_id, created_by FROM games 
+        WHERE room_code = ? AND status = 'waiting'
+    ''', (room_code,))
     
     result = cursor.fetchone()
     if not result:
         conn.close()
         return
     
-    game_id = result[0]
+    game_id, created_by = result
+    
+    if user_id != created_by:
+        await query.edit_message_text("❌ Только создатель игры может её начать")
+        conn.close()
+        return
     
     cursor.execute('SELECT COUNT(*) FROM game_players WHERE game_id = ?', (game_id,))
     player_count = cursor.fetchone()[0]
@@ -258,8 +311,6 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     conn.commit()
     conn.close()
-    
-    context.chat_data['game_id'] = game_id
     
     await query.edit_message_text("🎮 Игра начинается!\n\nПроверьте личные сообщения для ответа на первый вопрос.")
     
@@ -285,7 +336,7 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     
     for idx, (user_id, first_name) in enumerate(players):
         try:
-            keyboard = [[InlineKeyboardButton("Ответить", callback_data=f'answer_{game_id}_{question_idx}_{idx}')]]
+            keyboard = [[InlineKeyboardButton("✍️ Ответить", callback_data=f'answer_{game_id}_{question_idx}_{idx}')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await context.bot.send_message(
@@ -311,7 +362,7 @@ async def handle_answer(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     question = QUESTIONS[question_idx]
     
     await query.edit_message_text(
-        text=f"❓ <b>Вопрос: {question}</b>\n\nНапишите ваш ответ:",
+        text=f"❓ <b>{question}</b>\n\nНапиши свой ответ:",
         parse_mode='HTML'
     )
     
@@ -349,7 +400,7 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     conn.commit()
     conn.close()
     
-    await update.message.reply_text("✅ Ответ сохранён!")
+    await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
     
     if answered_count >= total_players:
         await send_question_to_players(game_id, question_idx + 1, context)
@@ -427,9 +478,13 @@ def main() -> None:
     app = Application.builder().token(token).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handle_answer, pattern=r'^answer_')],
+        entry_points=[
+            CallbackQueryHandler(handle_answer, pattern=r'^answer_'),
+            CallbackQueryHandler(ask_for_room_code, pattern=r'^join_by_code$')
+        ],
         states={
-            WAITING_FOR_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)]
+            WAITING_FOR_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
+            WAITING_FOR_ROOM_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_room_code)]
         },
         fallbacks=[]
     )
