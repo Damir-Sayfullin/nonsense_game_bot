@@ -546,7 +546,16 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     result = cursor.fetchone()
     if not result:
+        cursor.execute('''
+            SELECT awaiting_question_idx FROM game_players 
+            WHERE user_id = ?
+            LIMIT 1
+        ''', (user_id,))
+        user_result = cursor.fetchone()
         conn.close()
+        
+        if user_result and user_result[0] < 0:
+            await update.message.reply_text("⏳ Пока ждёшь своего вопроса, молчишь! 🤐")
         return
     
     game_id, question_idx, player_idx = result
