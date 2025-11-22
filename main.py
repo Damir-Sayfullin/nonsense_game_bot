@@ -706,12 +706,12 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # Get all remaining players
+    # Get all players (including the inactive one)
     cursor.execute('''
         SELECT user_id, first_name FROM game_players 
-        WHERE game_id = ? AND user_id != ?
-    ''', (game_id, inactive_user_id))
-    other_players = cursor.fetchall()
+        WHERE game_id = ?
+    ''', (game_id,))
+    all_players = cursor.fetchall()
     
     # Get room code
     cursor.execute('SELECT room_code FROM games WHERE game_id = ?', (game_id,))
@@ -724,9 +724,9 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
     conn.commit()
     conn.close()
     
-    # Notify all remaining players
+    # Notify ALL players including the inactive one
     message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок <b>{inactive_first_name}</b> не ответил в течение 2 минут и был исключён из игры.\n\nИгра закончена."
-    for user_id, first_name in other_players:
+    for user_id, first_name in all_players:
         try:
             await context.bot.send_message(chat_id=user_id, text=message, parse_mode='HTML')
         except TelegramError as e:
