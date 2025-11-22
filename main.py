@@ -337,11 +337,11 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     cursor.execute('''
         INSERT INTO game_messages (game_id, user_id, message_id)
         VALUES (?, ?, ?)
-    ''', (game_id, query.from_user.id, query.message.message_id))
+    ''', (game_id, query.from_user.id, message.message_id))
     conn.commit()
     conn.close()
     
-    context.user_data['creator_message_id'] = query.message.message_id
+    context.user_data['creator_message_id'] = message.message_id
 
 async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room_code: str) -> None:
     """Start a new game in an existing room (after completion)"""
