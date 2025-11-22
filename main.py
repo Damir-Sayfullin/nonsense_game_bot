@@ -604,10 +604,12 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     conn.commit()
     conn.close()
     
+    player_ids = [p[0] for p in players]
+    
     all_stories = "🎉 <b>ИСТОРИИ:</b>\n\n"
     
     for story_num in range(num_players):
-        story_text = build_rotated_story(all_answers, story_num, num_players)
+        story_text = build_rotated_story(all_answers, story_num, num_players, player_ids)
         all_stories += f"{story_text}\n\n"
     
     for player_id, user_id, first_name in players:
@@ -620,7 +622,7 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError as e:
             logger.error(f"Failed to send stories to {user_id}: {e}")
 
-def build_rotated_story(all_answers, story_num, num_players):
+def build_rotated_story(all_answers, story_num, num_players, player_ids):
     """Build a story with rotated player order"""
     story_answers = {}
     for q_idx, p_idx, answer in all_answers:
@@ -628,11 +630,11 @@ def build_rotated_story(all_answers, story_num, num_players):
     
     words = []
     for q_idx in range(len(QUESTIONS)):
-        player_offset = (story_num + q_idx) % num_players
-        player_idx = player_offset + 1
+        player_idx_in_rotation = (story_num + q_idx) % num_players
+        actual_player_id = player_ids[player_idx_in_rotation]
         
-        if (q_idx, player_idx) in story_answers:
-            words.append(story_answers[(q_idx, player_idx)])
+        if (q_idx, actual_player_id) in story_answers:
+            words.append(story_answers[(q_idx, actual_player_id)])
         else:
             words.append("—")
     
