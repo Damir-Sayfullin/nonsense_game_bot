@@ -173,6 +173,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     conn.close()
     
     set_room_code_in_context(context, room_code)
+    context.user_data['game_id'] = game_id
     
     keyboard = [
         [InlineKeyboardButton("➕ Пригласить друзей", callback_data='copy_code')],
@@ -181,7 +182,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    message = await query.edit_message_text(
         text=f"🎮 <b>Комната создана!</b>\n\n"
              f"🔑 Код комнаты: <code>{room_code}</code>\n\n"
              f"👥 Игроки (1):\n"
@@ -190,6 +191,8 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
+    
+    context.user_data['creator_message_id'] = query.message.message_id
 
 async def ask_for_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ask user for room code - entry point for conversation"""
@@ -280,13 +283,30 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         parse_mode='HTML'
     )
     
+    context.user_data['room_message_id'] = message.message_id
+    context.user_data['game_id'] = game_id
+    
     try:
         if creator_id and creator_id != user_id:
-            await context.bot.send_message(
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) FROM game_players WHERE game_id = ?
+            ''', (game_id,))
+            total_players = cursor.fetchone()[0]
+            conn.close()
+            
+            updated_text = f"🎮 <b>Комната создана!</b>\n\n" \
+                          f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
+                          f"👥 Игроки ({total_players}):\n{players_text}\n\n" \
+                          f"Скажи друзьям этот код, чтобы они присоединились!"
+            
+            await context.bot.edit_message_text(
                 chat_id=creator_id,
-                text=f"👤 Новый игрок присоединился!\n\n{message_text}",
-                parse_mode='HTML',
-                reply_markup=reply_markup
+                message_id=context.user_data.get('creator_message_id', 0),
+                text=updated_text,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
             )
     except TelegramError:
         pass
@@ -425,8 +445,11 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
         except TelegramError as e:
             logger.error(f"Failed to send message to {user_id}: {e}")
 
-async def handle_answer(query, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle player's answer"""
+async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle player's answer - convert button click to text input"""
+    query = update.callback_query
+    await query.answer()
+    
     data = query.data.split('_')
     game_id = int(data[1])
     question_idx = int(data[2])
@@ -439,7 +462,7 @@ async def handle_answer(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     question = QUESTIONS[question_idx]
     
     await query.edit_message_text(
-        text=f"❓ <b>{question}</b>\n\nНапиши свой ответ:",
+        text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b>\n\n<b>{question}</b>\n\n📝 <b>Напиши свой ответ в чат:</b>",
         parse_mode='HTML'
     )
     
