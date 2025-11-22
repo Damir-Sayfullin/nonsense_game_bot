@@ -249,9 +249,11 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     ''', (game_id, user_id, update.effective_user.username, update.effective_user.first_name))
     
     cursor.execute('''
-        SELECT first_name FROM game_players WHERE game_id = ? ORDER BY joined_at
+        SELECT user_id, first_name FROM game_players WHERE game_id = ? ORDER BY joined_at
     ''', (game_id,))
-    players = [row[0] for row in cursor.fetchall()]
+    players_data = cursor.fetchall()
+    players = [row[1] for row in players_data]
+    creator_id = players_data[0][0] if players_data else None
     
     conn.commit()
     conn.close()
@@ -267,14 +269,27 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     players_text = "\n".join([f"• {p}" for p in players])
     
+    message_text = f"🎮 <b>Присоединился!</b>\n\n" \
+                   f"🔑 Код: <code>{room_code}</code>\n\n" \
+                   f"👥 Игроки ({len(players)}):\n{players_text}\n\n" \
+                   f"Жди, когда начнётся игра!"
+    
     message = await update.message.reply_text(
-        text=f"🎮 <b>Присоединился!</b>\n\n"
-             f"🔑 Код: <code>{room_code}</code>\n\n"
-             f"👥 Игроки ({len(players)}):\n{players_text}\n\n"
-             f"Жди, когда начнётся игра!",
+        text=message_text,
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
+    
+    try:
+        if creator_id and creator_id != user_id:
+            await context.bot.send_message(
+                chat_id=creator_id,
+                text=f"👤 Новый игрок присоединился!\n\n{message_text}",
+                parse_mode='HTML',
+                reply_markup=reply_markup
+            )
+    except TelegramError:
+        pass
     
     return ConversationHandler.END
 
@@ -438,13 +453,18 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     game_id = context.user_data.get('current_game_id')
     question_idx = context.user_data.get('current_question_idx')
     player_idx = context.user_data.get('current_player_idx')
+    user_id = update.effective_user.id
     answer = update.message.text
+    
+    if not game_id or question_idx is None or player_idx is None:
+        await update.message.reply_text("❌ Ошибка: данные игры не найдены")
+        return ConversationHandler.END
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
     cursor.execute('''
-        INSERT INTO game_answers (game_id, question_idx, player_idx, answer)
+        INSERT OR REPLACE INTO game_answers (game_id, question_idx, player_idx, answer)
         VALUES (?, ?, ?, ?)
     ''', (game_id, question_idx, player_idx, answer))
     
@@ -454,8 +474,8 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     total_players = cursor.fetchone()[0]
     
     cursor.execute('''
-        SELECT COUNT(DISTINCT player_idx) FROM game_answers 
-        WHERE game_id = ? AND question_idx = ?
+        SELECT COUNT(*) FROM game_answers 
+        WHERE game_id = ? AND question_idx = ? AND answer IS NOT NULL
     ''', (game_id, question_idx))
     answered_count = cursor.fetchone()[0]
     
