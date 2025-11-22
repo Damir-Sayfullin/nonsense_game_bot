@@ -292,30 +292,26 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['room_message_id'] = message.message_id
     context.user_data['game_id'] = game_id
     
-    try:
-        if creator_id and creator_id != user_id:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT COUNT(*) FROM game_players WHERE game_id = ?
-            ''', (game_id,))
-            total_players = cursor.fetchone()[0]
-            conn.close()
-            
-            updated_text = f"🎮 <b>Комната создана!</b>\n\n" \
-                          f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
-                          f"👥 Игроки ({total_players}):\n{players_text}\n\n" \
-                          f"Скажи друзьям этот код, чтобы они присоединились!"
-            
-            await context.bot.edit_message_text(
-                chat_id=creator_id,
-                message_id=context.user_data.get('creator_message_id', 0),
-                text=updated_text,
-                reply_markup=reply_markup,
-                parse_mode='HTML'
-            )
-    except TelegramError:
-        pass
+    if creator_id and creator_id != user_id:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM game_players WHERE game_id = ?
+        ''', (game_id,))
+        total_players = cursor.fetchone()[0]
+        conn.close()
+        
+        updated_text = f"🎮 <b>Комната создана!</b>\n\n" \
+                      f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
+                      f"👥 Игроки ({total_players}):\n{players_text}\n\n" \
+                      f"Скажи друзьям этот код, чтобы они присоединились!"
+        
+        await context.bot.send_message(
+            chat_id=creator_id,
+            text=updated_text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     
     return ConversationHandler.END
 
@@ -612,7 +608,10 @@ def main() -> None:
             WAITING_FOR_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
             WAITING_FOR_ROOM_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_room_code)]
         },
-        fallbacks=[MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
+        fallbacks=[
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer),
+            CallbackQueryHandler(ask_for_room_code, pattern=r'^join_by_code$')
+        ],
         per_message=False
     )
 
