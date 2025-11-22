@@ -182,6 +182,12 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
+    # Get game status
+    cursor.execute('SELECT status FROM games WHERE game_id = ?', (game_id,))
+    game_status_row = cursor.fetchone()
+    game_status = game_status_row[0] if game_status_row else 'waiting'
+    logger.info(f"[UPDATE_ROOM_PLAYERS] Game status: {game_status}")
+    
     # Get all players
     cursor.execute('''
         SELECT user_id, first_name, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
@@ -199,12 +205,18 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
     players_list = players_list.strip()
     logger.info(f"[UPDATE_ROOM_PLAYERS] Player list text:\n{players_list}")
     
+    # If game is completed, delete old messages to force sending new ones
+    if game_status == 'completed':
+        logger.info(f"[UPDATE_ROOM_PLAYERS] Game is completed, clearing old messages")
+        cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
+        conn.commit()
+    
     # Update each player
     for user_id, first_name, is_admin in players_data:
         logger.info(f"[UPDATE_ROOM_PLAYERS] Processing player {first_name} (user_id={user_id}, is_admin={is_admin})")
         if is_admin:
             keyboard = [
-                [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
+                [InlineKeyboardButton("▶️ Начать новую игру", callback_data='new_game')],
                 [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
             ]
         else:
@@ -213,10 +225,17 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
             ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message_text = f"🎮 <b>Комната создана!</b>\n\n" \
-                      f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
-                      f"👥 Игроки ({len(players_data)}):\n{players_list}\n\n" \
-                      f"Скажи друзьям этот код, чтобы они присоединились!"
+        
+        # Different message text based on game status
+        if game_status == 'completed':
+            message_text = f"🎉 <b>Игра закончена!</b>\n\n" \
+                          f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
+                          f"👥 Игроки ({len(players_data)}):\n{players_list}"
+        else:
+            message_text = f"🎮 <b>Комната создана!</b>\n\n" \
+                          f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
+                          f"👥 Игроки ({len(players_data)}):\n{players_list}\n\n" \
+                          f"Скажи друзьям этот код, чтобы они присоединились!"
         
         logger.info(f"[UPDATE_ROOM_PLAYERS] Message text for {first_name}:\n{message_text}")
         
@@ -228,8 +247,8 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
         logger.info(f"[UPDATE_ROOM_PLAYERS] Existing message_row for user {user_id}: {message_row}")
         
         try:
-            if message_row:
-                # Edit existing message
+            if message_row and game_status != 'completed':
+                # Edit existing message only if game is not completed
                 message_id = message_row[0]
                 logger.info(f"[UPDATE_ROOM_PLAYERS] Editing message {message_id} for user {user_id}")
                 await context.bot.edit_message_text(
