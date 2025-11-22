@@ -178,6 +178,7 @@ def get_players_list_text(game_id, conn):
 
 async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Update all players in room with current player list"""
+    logger.info(f"[UPDATE_ROOM_PLAYERS] Called with game_id={game_id}, room_code={room_code}")
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -186,6 +187,7 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
         SELECT user_id, first_name, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
     ''', (game_id,))
     players_data = cursor.fetchall()
+    logger.info(f"[UPDATE_ROOM_PLAYERS] Found {len(players_data)} players: {players_data}")
     
     # Build player list text
     players_list = ""
@@ -195,9 +197,11 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
         else:
             players_list += f"• {first_name}\n"
     players_list = players_list.strip()
+    logger.info(f"[UPDATE_ROOM_PLAYERS] Player list text:\n{players_list}")
     
     # Update each player
     for user_id, first_name, is_admin in players_data:
+        logger.info(f"[UPDATE_ROOM_PLAYERS] Processing player {first_name} (user_id={user_id}, is_admin={is_admin})")
         if is_admin:
             keyboard = [
                 [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
@@ -214,16 +218,20 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
                       f"👥 Игроки ({len(players_data)}):\n{players_list}\n\n" \
                       f"Скажи друзьям этот код, чтобы они присоединились!"
         
+        logger.info(f"[UPDATE_ROOM_PLAYERS] Message text for {first_name}:\n{message_text}")
+        
         # Check if we have an existing message for this user
         cursor.execute('''
             SELECT message_id FROM game_messages WHERE game_id = ? AND user_id = ?
         ''', (game_id, user_id))
         message_row = cursor.fetchone()
+        logger.info(f"[UPDATE_ROOM_PLAYERS] Existing message_row for user {user_id}: {message_row}")
         
         try:
             if message_row:
                 # Edit existing message
                 message_id = message_row[0]
+                logger.info(f"[UPDATE_ROOM_PLAYERS] Editing message {message_id} for user {user_id}")
                 await context.bot.edit_message_text(
                     chat_id=user_id,
                     message_id=message_id,
@@ -231,22 +239,26 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
+                logger.info(f"[UPDATE_ROOM_PLAYERS] Successfully edited message for user {user_id}")
             else:
                 # Send new message and store message ID
+                logger.info(f"[UPDATE_ROOM_PLAYERS] Sending new message to user {user_id}")
                 msg = await context.bot.send_message(
                     chat_id=user_id,
                     text=message_text,
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
+                logger.info(f"[UPDATE_ROOM_PLAYERS] Message sent with ID {msg.message_id}")
                 cursor.execute('''
                     INSERT INTO game_messages (game_id, user_id, message_id)
                     VALUES (?, ?, ?)
                 ''', (game_id, user_id, msg.message_id))
                 conn.commit()
         except TelegramError as e:
-            logger.error(f"Failed to update message for {user_id}: {e}")
+            logger.error(f"[UPDATE_ROOM_PLAYERS] Failed to update message for {user_id}: {e}")
     
+    logger.info(f"[UPDATE_ROOM_PLAYERS] Completed for game_id={game_id}")
     conn.close()
 
 async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -739,6 +751,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate and send multiple rotated stories to all players"""
+    logger.info(f"[GENERATE_STORIES] Called with game_id={game_id}")
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -749,6 +762,7 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     players = cursor.fetchall()
     num_players = len(players)
+    logger.info(f"[GENERATE_STORIES] Found {num_players} players: {players}")
     
     cursor.execute('''
         SELECT question_idx, player_idx, answer FROM game_answers 
@@ -756,11 +770,18 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     ''', (game_id,))
     
     all_answers = cursor.fetchall()
+    logger.info(f"[GENERATE_STORIES] Found {len(all_answers)} answers")
     
     cursor.execute('''
         SELECT room_code FROM games WHERE game_id = ?
     ''', (game_id,))
-    room_code = cursor.fetchone()[0]
+    room_code_row = cursor.fetchone()
+    if room_code_row:
+        room_code = room_code_row[0]
+        logger.info(f"[GENERATE_STORIES] Room code: {room_code}")
+    else:
+        logger.error(f"[GENERATE_STORIES] No room code found for game_id={game_id}")
+        room_code = "UNKNOWN"
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
     conn.commit()
@@ -780,6 +801,7 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    logger.info(f"[GENERATE_STORIES] Sending stories to {num_players} players")
     for player_id, user_id, first_name in players:
         try:
             await context.bot.send_message(
@@ -788,18 +810,23 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
                 reply_markup=reply_markup,
                 parse_mode='HTML'
             )
+            logger.info(f"[GENERATE_STORIES] Stories sent to {first_name} (user_id={user_id})")
         except TelegramError as e:
-            logger.error(f"Failed to send stories to {user_id}: {e}")
+            logger.error(f"[GENERATE_STORIES] Failed to send stories to {user_id}: {e}")
     
     # Clear game messages so update_room_players sends new messages instead of editing
+    logger.info(f"[GENERATE_STORIES] Clearing game messages for game_id={game_id}")
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
     conn.commit()
     conn.close()
+    logger.info(f"[GENERATE_STORIES] Cleared game messages")
     
     # Show room status with player list
+    logger.info(f"[GENERATE_STORIES] Calling update_room_players with game_id={game_id}, room_code={room_code}")
     await update_room_players(game_id, room_code, context)
+    logger.info(f"[GENERATE_STORIES] Completed for game_id={game_id}")
 
 def build_rotated_story(all_answers, story_num, num_players, player_ids):
     """Build a story with rotated player order"""
