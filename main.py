@@ -219,6 +219,14 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
 
 async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Create a new game"""
+    room_code = get_room_code_from_context(context)
+    
+    # If we have a room code, we're restarting an existing room
+    if room_code:
+        await start_new_game_in_room(query, context, room_code)
+        return
+    
+    # Otherwise, create a brand new game
     room_code = generate_room_code()
     
     conn = sqlite3.connect(DB_FILE)
@@ -261,6 +269,57 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     
     context.user_data['creator_message_id'] = query.message.message_id
+
+async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room_code: str) -> None:
+    """Start a new game in an existing room (after completion)"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT game_id FROM games WHERE room_code = ? AND status = 'completed'
+    ''', (room_code,))
+    
+    result = cursor.fetchone()
+    if not result:
+        conn.close()
+        await query.edit_message_text("❌ Не удалось начать новую игру")
+        return
+    
+    old_game_id = result[0]
+    
+    cursor.execute('''
+        SELECT created_by FROM games WHERE game_id = ?
+    ''', (old_game_id,))
+    created_by = cursor.fetchone()[0]
+    
+    # Create new game with same room code
+    cursor.execute('''
+        INSERT INTO games (room_code, created_by, status, current_question_idx)
+        VALUES (?, ?, ?, ?)
+    ''', (room_code, created_by, 'waiting', 0))
+    
+    new_game_id = cursor.lastrowid
+    
+    # Copy players from old game to new game with admin status preserved
+    cursor.execute('''
+        SELECT user_id, username, first_name, is_admin FROM game_players 
+        WHERE game_id = ? ORDER BY joined_at
+    ''', (old_game_id,))
+    
+    players = cursor.fetchall()
+    for user_id, username, first_name, is_admin in players:
+        cursor.execute('''
+            INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (new_game_id, user_id, username, first_name, is_admin))
+    
+    conn.commit()
+    conn.close()
+    
+    context.user_data['game_id'] = new_game_id
+    await query.edit_message_text("🎮 <b>Новая игра начинается в той же комнате!</b>\n\nЖди, когда админ начнёт игру.")
+    
+    await update_room_players(new_game_id, room_code, context)
 
 async def ask_for_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ask user for room code - entry point for conversation"""
