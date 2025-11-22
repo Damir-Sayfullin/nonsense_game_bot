@@ -623,22 +623,11 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.error(f"Failed to send stories to {user_id}: {e}")
 
 def build_story(answers, player_name):
-    """Build a funny story from answers"""
-    words = [
-        answers.get(0, "неизвестный"),
-        answers.get(1, "персонаж"),
-        answers.get(2, "друг"),
-        answers.get(3, "место"),
-        answers.get(4, "действие"),
-        answers.get(5, "результат")
-    ]
-    
-    story = (
-        f"<b>{player_name}</b>, однажды <b>{words[0]}</b> <b>{words[1]}</b> встретил "
-        f"<b>{words[2]}</b> <b>{words[3]}</b>. Они начали <b>{words[4]}</b>. "
-        f"В результате <b>{words[5]}</b>!"
-    )
-    
+    """Build a story from answers with question numbering"""
+    story = f"<b>{player_name}:</b>\n\n"
+    for idx, question in enumerate(QUESTIONS):
+        answer = answers.get(idx, "—")
+        story += f"{idx + 1}. {question} <b>{answer}</b>\n"
     return story
 
 def main() -> None:
