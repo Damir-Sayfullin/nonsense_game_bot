@@ -683,9 +683,10 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
                 text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b> (0/{total_players} ответили)\n\n<b>{question}</b>\n\n📝 Напиши свой ответ в чат:",
                 parse_mode='HTML'
             )
-            # Store message ID for this question
+            # Delete old message records and store new message ID
+            cursor.execute('DELETE FROM game_messages WHERE game_id = ? AND user_id = ?', (game_id, user_id))
             cursor.execute('''
-                INSERT OR REPLACE INTO game_messages (game_id, user_id, message_id)
+                INSERT INTO game_messages (game_id, user_id, message_id)
                 VALUES (?, ?, ?)
             ''', (game_id, user_id, msg.message_id))
             conn.commit()
