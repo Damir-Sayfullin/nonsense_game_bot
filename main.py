@@ -586,7 +586,8 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT user_id, first_name FROM game_players WHERE game_id = ?
+        SELECT id, user_id, first_name FROM game_players WHERE game_id = ?
+        ORDER BY id
     ''', (game_id,))
     
     players = cursor.fetchall()
@@ -597,23 +598,19 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         WHERE game_id = ? ORDER BY question_idx, player_idx
     ''', (game_id,))
     
-    answers_by_player_and_question = {}
-    for row in cursor.fetchall():
-        q_idx, p_idx, answer = row
-        if p_idx not in answers_by_player_and_question:
-            answers_by_player_and_question[p_idx] = {}
-        answers_by_player_and_question[p_idx][q_idx] = answer
+    all_answers = cursor.fetchall()
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
     conn.commit()
     conn.close()
     
     all_stories = "🎉 <b>ИСТОРИИ:</b>\n\n"
-    for story_idx in range(num_players):
-        story_text = build_rotated_story(answers_by_player_and_question, story_idx, num_players)
+    
+    for story_num in range(num_players):
+        story_text = build_rotated_story(all_answers, story_num, num_players)
         all_stories += f"{story_text}\n\n"
     
-    for user_id, first_name in players:
+    for player_id, user_id, first_name in players:
         try:
             await context.bot.send_message(
                 chat_id=user_id,
@@ -623,13 +620,19 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError as e:
             logger.error(f"Failed to send stories to {user_id}: {e}")
 
-def build_rotated_story(answers_by_player_and_question, story_offset, num_players):
+def build_rotated_story(all_answers, story_num, num_players):
     """Build a story with rotated player order"""
+    story_answers = {}
+    for q_idx, p_idx, answer in all_answers:
+        story_answers[(q_idx, p_idx)] = answer
+    
     words = []
     for q_idx in range(len(QUESTIONS)):
-        player_idx = (story_offset + q_idx) % num_players
-        if player_idx in answers_by_player_and_question and q_idx in answers_by_player_and_question[player_idx]:
-            words.append(answers_by_player_and_question[player_idx][q_idx])
+        player_offset = (story_num + q_idx) % num_players
+        player_idx = player_offset + 1
+        
+        if (q_idx, player_idx) in story_answers:
+            words.append(story_answers[(q_idx, player_idx)])
         else:
             words.append("—")
     
