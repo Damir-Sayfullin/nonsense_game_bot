@@ -39,10 +39,16 @@ def init_db():
             user_id INTEGER,
             username TEXT,
             first_name TEXT,
+            awaiting_question_idx INTEGER DEFAULT -1,
             joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (game_id) REFERENCES games(game_id)
         )
     ''')
+    
+    try:
+        cursor.execute('ALTER TABLE game_players ADD COLUMN awaiting_question_idx INTEGER DEFAULT -1')
+    except sqlite3.OperationalError:
+        pass
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS game_answers (
@@ -419,31 +425,34 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT user_id, first_name FROM game_players WHERE game_id = ?
+        SELECT id, user_id, first_name FROM game_players WHERE game_id = ?
     ''', (game_id,))
     
     players = cursor.fetchall()
-    conn.close()
     
     if question_idx >= len(QUESTIONS):
+        conn.close()
         await generate_stories(game_id, context)
         return
     
     question = QUESTIONS[question_idx]
     
-    for idx, (user_id, first_name) in enumerate(players):
+    for player_id, user_id, first_name in players:
+        cursor.execute('''
+            UPDATE game_players SET awaiting_question_idx = ? WHERE id = ?
+        ''', (question_idx, player_id))
+        
         try:
-            keyboard = [[InlineKeyboardButton("✍️ Ответить", callback_data=f'answer_{game_id}_{question_idx}_{idx}')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b>\n\n<b>{question}</b>",
-                reply_markup=reply_markup,
+                text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b>\n\n<b>{question}</b>\n\n📝 Напиши свой ответ в чат:",
                 parse_mode='HTML'
             )
         except TelegramError as e:
             logger.error(f"Failed to send message to {user_id}: {e}")
+    
+    conn.commit()
+    conn.close()
 
 async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle player's answer - convert button click to text input"""
@@ -473,23 +482,33 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not update.message or not update.message.text:
         return WAITING_FOR_ANSWER
     
-    game_id = context.user_data.get('current_game_id')
-    question_idx = context.user_data.get('current_question_idx')
-    player_idx = context.user_data.get('current_player_idx')
     user_id = update.effective_user.id
     answer = update.message.text
-    
-    if not game_id or question_idx is None or player_idx is None:
-        await update.message.reply_text("❌ Ошибка: данные игры не найдены")
-        return ConversationHandler.END
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
     cursor.execute('''
+        SELECT game_id, awaiting_question_idx, id FROM game_players 
+        WHERE user_id = ? AND awaiting_question_idx >= 0
+        LIMIT 1
+    ''', (user_id,))
+    
+    result = cursor.fetchone()
+    if not result:
+        conn.close()
+        return WAITING_FOR_ANSWER
+    
+    game_id, question_idx, player_idx = result
+    
+    cursor.execute('''
         INSERT OR REPLACE INTO game_answers (game_id, question_idx, player_idx, answer)
         VALUES (?, ?, ?, ?)
     ''', (game_id, question_idx, player_idx, answer))
+    
+    cursor.execute('''
+        UPDATE game_players SET awaiting_question_idx = -1 WHERE id = ?
+    ''', (player_idx,))
     
     cursor.execute('''
         SELECT COUNT(*) FROM game_players WHERE game_id = ?
@@ -503,17 +522,17 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     answered_count = cursor.fetchone()[0]
     
     conn.commit()
-    conn.close()
     
     await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
     
     if answered_count >= total_players:
         await send_question_to_players(game_id, question_idx + 1, context)
     
+    conn.close()
     return ConversationHandler.END
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generate and send stories to all players"""
+    """Generate and send all stories to all players"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -539,17 +558,20 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     conn.commit()
     conn.close()
     
+    all_stories = "🎉 <b>ВСЕ ИСТОРИИ:</b>\n\n"
     for idx, (user_id, first_name) in enumerate(players):
         story_text = build_story(answers_by_player.get(idx, {}), first_name)
-        
+        all_stories += f"{story_text}\n\n{'─' * 40}\n\n"
+    
+    for user_id, first_name in players:
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"🎉 <b>Ваша история:</b>\n\n{story_text}",
+                text=all_stories,
                 parse_mode='HTML'
             )
         except TelegramError as e:
-            logger.error(f"Failed to send story to {user_id}: {e}")
+            logger.error(f"Failed to send stories to {user_id}: {e}")
 
 def build_story(answers, player_name):
     """Build a funny story from answers"""
@@ -584,14 +606,13 @@ def main() -> None:
 
     conv_handler = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(handle_answer, pattern=r'^answer_'),
             CallbackQueryHandler(ask_for_room_code, pattern=r'^join_by_code$')
         ],
         states={
             WAITING_FOR_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
             WAITING_FOR_ROOM_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_room_code)]
         },
-        fallbacks=[],
+        fallbacks=[MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
         per_message=False
     )
 
