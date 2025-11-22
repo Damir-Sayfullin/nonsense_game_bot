@@ -100,6 +100,31 @@ WAITING_FOR_ROOM_CODE = 2
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start command"""
+    user_id = update.effective_user.id
+    
+    # Check if user is in an active game
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT g.status FROM game_players gp
+        JOIN games g ON gp.game_id = g.game_id
+        WHERE gp.user_id = ? AND g.status != 'completed'
+        LIMIT 1
+    ''', (user_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        await update.message.reply_text(
+            "⏳ <b>Ты уже в игре!</b>\n\n"
+            "Завершите текущую игру перед тем, как начинать новую. "
+            "Нажми ❌ Выйти, если хочешь покинуть комнату.",
+            parse_mode='HTML'
+        )
+        return
+    
     keyboard = [
         [InlineKeyboardButton("🎮 Новая игра", callback_data='new_game')],
         [InlineKeyboardButton("📋 Правила", callback_data='rules')],
