@@ -4,6 +4,7 @@ import os
 import sqlite3
 import random
 import string
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.error import TelegramError
@@ -638,6 +639,43 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     await send_question_to_players(game_id, 0, context)
 
+async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_name, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """End game because a player was inactive"""
+    logger.info(f"[INACTIVITY] Ending game {game_id} due to inactivity of {inactive_first_name}")
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # Get all remaining players
+    cursor.execute('''
+        SELECT user_id, first_name FROM game_players 
+        WHERE game_id = ? AND user_id != ?
+    ''', (game_id, inactive_user_id))
+    other_players = cursor.fetchall()
+    
+    # Get room code
+    cursor.execute('SELECT room_code FROM games WHERE game_id = ?', (game_id,))
+    room_row = cursor.fetchone()
+    room_code = room_row[0] if room_row else "UNKNOWN"
+    
+    # Remove inactive player
+    cursor.execute('DELETE FROM game_players WHERE game_id = ? AND user_id = ?', (game_id, inactive_user_id))
+    cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('aborted', game_id))
+    conn.commit()
+    conn.close()
+    
+    # Notify all remaining players
+    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок <b>{inactive_first_name}</b> не ответил в течение 2 минут и был исключён из игры.\n\nИгра закончена."
+    for user_id, first_name in other_players:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message, parse_mode='HTML')
+        except TelegramError as e:
+            logger.error(f"Failed to notify {first_name}: {e}")
+
+async def start_inactivity_timeout(game_id, user_id, first_name, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start a 2-minute inactivity timeout for a player"""
+    await asyncio.sleep(120)  # 2 minutes
+    await end_game_due_to_inactivity(game_id, user_id, first_name, context)
+
 async def send_question_to_players(game_id, question_idx, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send current question to all players"""
     logger.info(f"[SEND_QUESTION_TO_PLAYERS] Called with game_id={game_id}, question_idx={question_idx}, total_questions={len(QUESTIONS)}")
@@ -684,12 +722,15 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
                 parse_mode='HTML'
             )
             # Delete old message records and store new message ID
-            cursor.execute('DELETE FROM game_messages WHERE game_id = ? AND user_id = ?', (game_id, user_id))
+            cursor.execute('Delete FROM game_messages WHERE game_id = ? AND user_id = ?', (game_id, user_id))
             cursor.execute('''
                 INSERT INTO game_messages (game_id, user_id, message_id)
                 VALUES (?, ?, ?)
             ''', (game_id, user_id, msg.message_id))
             conn.commit()
+            
+            # Start inactivity timeout for this player
+            asyncio.create_task(start_inactivity_timeout(game_id, user_id, first_name, context))
         except TelegramError as e:
             logger.error(f"Failed to send message to {user_id}: {e}")
     
@@ -807,6 +848,12 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     user_id = update.effective_user.id
     answer = update.message.text
+    
+    # Cancel any pending inactivity timeout for this user
+    key = f"timeout_{user_id}"
+    if key in context.user_data and context.user_data[key]:
+        context.user_data[key].cancel()
+        context.user_data[key] = None
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
