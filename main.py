@@ -369,11 +369,25 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
 async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Create a new game"""
     room_code = get_room_code_from_context(context)
+    user_id = query.from_user.id
     
-    # If we have a room code, we're restarting an existing room
+    # If we have a room code, check if we're the creator and can restart it
     if room_code:
-        await start_new_game_in_room(query, context, room_code)
-        return
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT created_by FROM games WHERE room_code = ? AND status = 'completed'
+        ''', (room_code,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        # Only restart the room if we're the creator and game is completed
+        if result and result[0] == user_id:
+            await start_new_game_in_room(query, context, room_code)
+            return
+        
+        # Clear the room code if we can't restart it
+        context.user_data.pop('room_code', None)
     
     # Otherwise, create a brand new game
     room_code = generate_room_code()
