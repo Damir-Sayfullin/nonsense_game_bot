@@ -452,9 +452,10 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         parse_mode='HTML'
     )
     
-    # Store message ID for this player
+    # Store message ID for this player (delete old one first if exists)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    cursor.execute('DELETE FROM game_messages WHERE game_id = ? AND user_id = ?', (game_id, user_id))
     cursor.execute('''
         INSERT INTO game_messages (game_id, user_id, message_id)
         VALUES (?, ?, ?)
