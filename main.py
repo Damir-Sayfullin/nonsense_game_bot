@@ -215,10 +215,17 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
     for user_id, first_name, is_admin in players_data:
         logger.info(f"[UPDATE_ROOM_PLAYERS] Processing player {first_name} (user_id={user_id}, is_admin={is_admin})")
         if is_admin:
-            keyboard = [
-                [InlineKeyboardButton("▶️ Начать новую игру", callback_data='new_game')],
-                [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
-            ]
+            if game_status == 'completed':
+                keyboard = [
+                    [InlineKeyboardButton("▶️ Начать новую игру", callback_data='new_game')],
+                    [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+                ]
+            else:
+                # Game is waiting - show start game button
+                keyboard = [
+                    [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
+                    [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+                ]
         else:
             keyboard = [
                 [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
