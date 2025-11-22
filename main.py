@@ -205,13 +205,36 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
                       f"👥 Игроки ({len(players_data)}):\n{players_list}\n\n" \
                       f"Скажи друзьям этот код, чтобы они присоединились!"
         
+        # Check if we have an existing message for this user
+        cursor.execute('''
+            SELECT message_id FROM game_messages WHERE game_id = ? AND user_id = ?
+        ''', (game_id, user_id))
+        message_row = cursor.fetchone()
+        
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=message_text,
-                reply_markup=reply_markup,
-                parse_mode='HTML'
-            )
+            if message_row:
+                # Edit existing message
+                message_id = message_row[0]
+                await context.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=message_id,
+                    text=message_text,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+            else:
+                # Send new message and store message ID
+                msg = await context.bot.send_message(
+                    chat_id=user_id,
+                    text=message_text,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+                cursor.execute('''
+                    INSERT INTO game_messages (game_id, user_id, message_id)
+                    VALUES (?, ?, ?)
+                ''', (game_id, user_id, msg.message_id))
+                conn.commit()
         except TelegramError as e:
             logger.error(f"Failed to update message for {user_id}: {e}")
     
@@ -267,6 +290,16 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
+    
+    # Store message ID for future edits
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO game_messages (game_id, user_id, message_id)
+        VALUES (?, ?, ?)
+    ''', (game_id, query.from_user.id, query.message.message_id))
+    conn.commit()
+    conn.close()
     
     context.user_data['creator_message_id'] = query.message.message_id
 
@@ -398,6 +431,16 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     
     context.user_data['room_message_id'] = message.message_id
+    
+    # Store message ID for this player
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO game_messages (game_id, user_id, message_id)
+        VALUES (?, ?, ?)
+    ''', (game_id, user_id, message.message_id))
+    conn.commit()
+    conn.close()
     
     await update_room_players(game_id, room_code, context)
     
