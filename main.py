@@ -636,11 +636,22 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     
     question = QUESTIONS[question_idx]
     
+    # Prepare all player updates first
+    updates = []
     for player_id, user_id, first_name in players:
         cursor.execute('''
             UPDATE game_players SET awaiting_question_idx = ? WHERE id = ?
         ''', (question_idx, player_id))
-        
+        updates.append((user_id, first_name, player_id))
+    
+    conn.commit()
+    conn.close()
+    
+    # Now send messages AFTER closing database
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    for user_id, first_name, player_id in updates:
         try:
             msg = await context.bot.send_message(
                 chat_id=user_id,
@@ -652,10 +663,10 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
                 INSERT OR REPLACE INTO game_messages (game_id, user_id, message_id)
                 VALUES (?, ?, ?)
             ''', (game_id, user_id, msg.message_id))
+            conn.commit()
         except TelegramError as e:
             logger.error(f"Failed to send message to {user_id}: {e}")
     
-    conn.commit()
     conn.close()
 
 async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -796,6 +807,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     game_id, question_idx, player_idx = result
     
+    # Save answer and update player status
     cursor.execute('''
         INSERT OR REPLACE INTO game_answers (game_id, question_idx, player_idx, answer)
         VALUES (?, ?, ?, ?)
@@ -805,6 +817,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         UPDATE game_players SET awaiting_question_idx = -1 WHERE id = ?
     ''', (player_idx,))
     
+    # Get counts and all player info BEFORE closing DB
     cursor.execute('''
         SELECT COUNT(*) FROM game_players WHERE game_id = ?
     ''', (game_id,))
@@ -816,24 +829,25 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ''', (game_id, question_idx))
     answered_count = cursor.fetchone()[0]
     
-    # Get all players to update their question messages with progress
+    # Get all players and their message IDs
     cursor.execute('''
-        SELECT user_id FROM game_players WHERE game_id = ?
+        SELECT gp.user_id, gm.message_id FROM game_players gp
+        LEFT JOIN game_messages gm ON gp.game_id = gm.game_id AND gp.user_id = gm.user_id
+        WHERE gp.game_id = ?
     ''', (game_id,))
-    all_player_ids = [row[0] for row in cursor.fetchall()]
+    player_messages = cursor.fetchall()
     
-    # Get the question text
     question = QUESTIONS[question_idx]
     
-    # Update question message for all players with new progress
-    for player_user_id in all_player_ids:
-        cursor.execute('''
-            SELECT message_id FROM game_messages WHERE game_id = ? AND user_id = ?
-        ''', (game_id, player_user_id))
-        msg_row = cursor.fetchone()
-        
-        if msg_row:
-            message_id = msg_row[0]
+    conn.commit()
+    conn.close()
+    
+    # Send reply first
+    await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
+    
+    # Now update question messages for all players AFTER closing DB
+    for player_user_id, message_id in player_messages:
+        if message_id:
             try:
                 await context.bot.edit_message_text(
                     chat_id=player_user_id,
@@ -844,14 +858,8 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except TelegramError as e:
                 logger.error(f"Failed to update progress for {player_user_id}: {e}")
     
-    conn.commit()
-    
-    await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
-    
     if answered_count >= total_players:
         await send_question_to_players(game_id, question_idx + 1, context)
-    
-    conn.close()
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate and send multiple rotated stories to all players"""
