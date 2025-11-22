@@ -610,6 +610,7 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     ''', (game_id,))
     
     players = cursor.fetchall()
+    total_players = len(players)
     
     if question_idx >= len(QUESTIONS):
         logger.info(f"[SEND_QUESTION_TO_PLAYERS] All questions answered! Calling generate_stories")
@@ -617,7 +618,7 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
         await generate_stories(game_id, context)
         return
     
-    logger.info(f"[SEND_QUESTION_TO_PLAYERS] Sending question {question_idx} to {len(players)} players")
+    logger.info(f"[SEND_QUESTION_TO_PLAYERS] Sending question {question_idx} to {total_players} players")
     
     question = QUESTIONS[question_idx]
     
@@ -627,11 +628,16 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
         ''', (question_idx, player_id))
         
         try:
-            await context.bot.send_message(
+            msg = await context.bot.send_message(
                 chat_id=user_id,
-                text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b>\n\n<b>{question}</b>\n\n📝 Напиши свой ответ в чат:",
+                text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b> (0/{total_players} ответили)\n\n<b>{question}</b>\n\n📝 Напиши свой ответ в чат:",
                 parse_mode='HTML'
             )
+            # Store message ID for this question
+            cursor.execute('''
+                INSERT OR REPLACE INTO game_messages (game_id, user_id, message_id)
+                VALUES (?, ?, ?)
+            ''', (game_id, user_id, msg.message_id))
         except TelegramError as e:
             logger.error(f"Failed to send message to {user_id}: {e}")
     
@@ -705,6 +711,34 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ''', (game_id, question_idx))
     answered_count = cursor.fetchone()[0]
     
+    # Get all players to update their question messages with progress
+    cursor.execute('''
+        SELECT user_id FROM game_players WHERE game_id = ?
+    ''', (game_id,))
+    all_player_ids = [row[0] for row in cursor.fetchall()]
+    
+    # Get the question text
+    question = QUESTIONS[question_idx]
+    
+    # Update question message for all players with new progress
+    for player_user_id in all_player_ids:
+        cursor.execute('''
+            SELECT message_id FROM game_messages WHERE game_id = ? AND user_id = ?
+        ''', (game_id, player_user_id))
+        msg_row = cursor.fetchone()
+        
+        if msg_row:
+            message_id = msg_row[0]
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=player_user_id,
+                    message_id=message_id,
+                    text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b> ({answered_count}/{total_players} ответили)\n\n<b>{question}</b>\n\n📝 Напиши свой ответ в чат:",
+                    parse_mode='HTML'
+                )
+            except TelegramError as e:
+                logger.error(f"Failed to update progress for {player_user_id}: {e}")
+    
     conn.commit()
     
     await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
@@ -767,6 +801,34 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         WHERE game_id = ? AND question_idx = ? AND answer IS NOT NULL
     ''', (game_id, question_idx))
     answered_count = cursor.fetchone()[0]
+    
+    # Get all players to update their question messages with progress
+    cursor.execute('''
+        SELECT user_id FROM game_players WHERE game_id = ?
+    ''', (game_id,))
+    all_player_ids = [row[0] for row in cursor.fetchall()]
+    
+    # Get the question text
+    question = QUESTIONS[question_idx]
+    
+    # Update question message for all players with new progress
+    for player_user_id in all_player_ids:
+        cursor.execute('''
+            SELECT message_id FROM game_messages WHERE game_id = ? AND user_id = ?
+        ''', (game_id, player_user_id))
+        msg_row = cursor.fetchone()
+        
+        if msg_row:
+            message_id = msg_row[0]
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=player_user_id,
+                    message_id=message_id,
+                    text=f"❓ <b>Вопрос {question_idx + 1}/{len(QUESTIONS)}</b> ({answered_count}/{total_players} ответили)\n\n<b>{question}</b>\n\n📝 Напиши свой ответ в чат:",
+                    parse_mode='HTML'
+                )
+            except TelegramError as e:
+                logger.error(f"Failed to update progress for {player_user_id}: {e}")
     
     conn.commit()
     
