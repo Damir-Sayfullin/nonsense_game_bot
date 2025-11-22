@@ -581,7 +581,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     conn.close()
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generate and send one story to all players"""
+    """Generate and send multiple rotated stories to all players"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -590,45 +590,50 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     ''', (game_id,))
     
     players = cursor.fetchall()
+    num_players = len(players)
     
     cursor.execute('''
         SELECT question_idx, player_idx, answer FROM game_answers 
         WHERE game_id = ? ORDER BY question_idx, player_idx
     ''', (game_id,))
     
-    answers_by_question = {}
+    answers_by_player_and_question = {}
     for row in cursor.fetchall():
         q_idx, p_idx, answer = row
-        if q_idx not in answers_by_question:
-            answers_by_question[q_idx] = []
-        answers_by_question[q_idx].append(answer)
+        if p_idx not in answers_by_player_and_question:
+            answers_by_player_and_question[p_idx] = {}
+        answers_by_player_and_question[p_idx][q_idx] = answer
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
     conn.commit()
     conn.close()
     
-    story_text = build_story(answers_by_question)
+    all_stories = "🎉 <b>ИСТОРИИ:</b>\n\n"
+    for story_idx in range(num_players):
+        story_text = build_rotated_story(answers_by_player_and_question, story_idx, num_players)
+        all_stories += f"{story_text}\n\n"
     
     for user_id, first_name in players:
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"🎉 <b>История:</b>\n\n{story_text}",
+                text=all_stories,
                 parse_mode='HTML'
             )
         except TelegramError as e:
-            logger.error(f"Failed to send story to {user_id}: {e}")
+            logger.error(f"Failed to send stories to {user_id}: {e}")
 
-def build_story(answers_by_question):
-    """Build a story by joining answers with 'и'"""
+def build_rotated_story(answers_by_player_and_question, story_offset, num_players):
+    """Build a story with rotated player order"""
     words = []
     for q_idx in range(len(QUESTIONS)):
-        if q_idx in answers_by_question and answers_by_question[q_idx]:
-            words.append(answers_by_question[q_idx][0])
+        player_idx = (story_offset + q_idx) % num_players
+        if player_idx in answers_by_player_and_question and q_idx in answers_by_player_and_question[player_idx]:
+            words.append(answers_by_player_and_question[player_idx][q_idx])
         else:
             words.append("—")
     
-    story = " и ".join(words)
+    story = " ".join(words)
     return story
 
 def main() -> None:
