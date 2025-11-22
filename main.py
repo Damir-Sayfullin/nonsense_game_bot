@@ -40,6 +40,7 @@ def init_db():
             username TEXT,
             first_name TEXT,
             awaiting_question_idx INTEGER DEFAULT -1,
+            is_admin INTEGER DEFAULT 0,
             joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (game_id) REFERENCES games(game_id)
         )
@@ -47,6 +48,11 @@ def init_db():
     
     try:
         cursor.execute('ALTER TABLE game_players ADD COLUMN awaiting_question_idx INTEGER DEFAULT -1')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE game_players ADD COLUMN is_admin INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass
     
@@ -154,6 +160,63 @@ def set_room_code_in_context(context, code):
     """Set room code in user context"""
     context.user_data['room_code'] = code
 
+def get_players_list_text(game_id, conn):
+    """Get formatted player list with admin crown"""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT first_name, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
+    ''', (game_id,))
+    players_data = cursor.fetchall()
+    
+    players_text = ""
+    for name, is_admin in players_data:
+        if is_admin:
+            players_text += f"• {name} 👑\n"
+        else:
+            players_text += f"• {name}\n"
+    return players_text.strip()
+
+async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Update all players in room with current player list"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT user_id, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
+    ''', (game_id,))
+    players_data = cursor.fetchall()
+    
+    players_list = get_players_list_text(game_id, conn)
+    
+    for user_id, is_admin in players_data:
+        if is_admin:
+            keyboard = [
+                [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
+                [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+            ]
+        else:
+            keyboard = [
+                [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message_text = f"🎮 <b>Комната создана!</b>\n\n" \
+                      f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
+                      f"👥 Игроки ({len(players_data)}):\n{players_list}\n\n" \
+                      f"Скажи друзьям этот код, чтобы они присоединились!"
+        
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+        except TelegramError as e:
+            logger.error(f"Failed to update message for {user_id}: {e}")
+    
+    conn.close()
+
 async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Create a new game"""
     room_code = generate_room_code()
@@ -171,8 +234,8 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     game_id = cursor.lastrowid
     
     cursor.execute('''
-        INSERT INTO game_players (game_id, user_id, username, first_name)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
+        VALUES (?, ?, ?, ?, 1)
     ''', (game_id, user_id, query.from_user.username, query.from_user.first_name))
     
     conn.commit()
@@ -191,7 +254,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         text=f"🎮 <b>Комната создана!</b>\n\n"
              f"🔑 Код комнаты: <code>{room_code}</code>\n\n"
              f"👥 Игроки (1):\n"
-             f"• {query.from_user.first_name}\n\n"
+             f"• {query.from_user.first_name} 👑\n\n"
              f"Скажи друзьям этот код, чтобы они присоединились!",
         reply_markup=reply_markup,
         parse_mode='HTML'
@@ -252,63 +315,32 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
     
     cursor.execute('''
-        INSERT INTO game_players (game_id, user_id, username, first_name)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
+        VALUES (?, ?, ?, ?, 0)
     ''', (game_id, user_id, update.effective_user.username, update.effective_user.first_name))
-    
-    cursor.execute('''
-        SELECT user_id, first_name FROM game_players WHERE game_id = ? ORDER BY joined_at
-    ''', (game_id,))
-    players_data = cursor.fetchall()
-    players = [row[1] for row in players_data]
-    creator_id = players_data[0][0] if players_data else None
     
     conn.commit()
     conn.close()
     
     set_room_code_in_context(context, room_code)
+    context.user_data['game_id'] = game_id
     
     keyboard = [
         [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    players_text = "\n".join([f"• {p}" for p in players])
-    
-    message_text = f"🎮 <b>Присоединился!</b>\n\n" \
-                   f"🔑 Код: <code>{room_code}</code>\n\n" \
-                   f"👥 Игроки ({len(players)}):\n{players_text}\n\n" \
-                   f"Жди, когда начнётся игра!"
-    
     message = await update.message.reply_text(
-        text=message_text,
+        text=f"🎮 <b>Присоединился!</b>\n\n"
+             f"🔑 Код: <code>{room_code}</code>\n\n"
+             f"Жди, когда начнётся игра!",
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
     
     context.user_data['room_message_id'] = message.message_id
-    context.user_data['game_id'] = game_id
     
-    if creator_id and creator_id != user_id:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT COUNT(*) FROM game_players WHERE game_id = ?
-        ''', (game_id,))
-        total_players = cursor.fetchone()[0]
-        conn.close()
-        
-        updated_text = f"🎮 <b>Комната создана!</b>\n\n" \
-                      f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
-                      f"👥 Игроки ({total_players}):\n{players_text}\n\n" \
-                      f"Скажи друзьям этот код, чтобы они присоединились!"
-        
-        await context.bot.send_message(
-            chat_id=creator_id,
-            text=updated_text,
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
+    await update_room_players(game_id, room_code, context)
     
     return ConversationHandler.END
 
@@ -347,19 +379,27 @@ async def leave_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     if player_count == 0:
         cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
         await query.edit_message_text("👋 Ты вышел из комнаты. Комната удалена.")
+        conn.commit()
+        conn.close()
     else:
         if user_id == created_by:
             cursor.execute('''
-                SELECT user_id FROM game_players WHERE game_id = ? ORDER BY joined_at LIMIT 1
+                SELECT user_id, id FROM game_players WHERE game_id = ? ORDER BY joined_at LIMIT 1
             ''', (game_id,))
-            new_creator = cursor.fetchone()[0]
-            cursor.execute('UPDATE games SET created_by = ? WHERE game_id = ?', (new_creator, game_id))
+            new_creator_data = cursor.fetchone()
+            new_creator_id = new_creator_data[0]
+            new_creator_player_id = new_creator_data[1]
+            
+            cursor.execute('UPDATE games SET created_by = ? WHERE game_id = ?', (new_creator_id, game_id))
+            cursor.execute('UPDATE game_players SET is_admin = 1 WHERE id = ?', (new_creator_player_id,))
             await query.edit_message_text("👋 Ты вышел из комнаты. Новый создатель - следующий игрок.")
         else:
             await query.edit_message_text("👋 Ты вышел из комнаты.")
-    
-    conn.commit()
-    conn.close()
+        
+        conn.commit()
+        conn.close()
+        
+        await update_room_players(game_id, room_code, context)
     
     context.user_data.pop('room_code', None)
 
