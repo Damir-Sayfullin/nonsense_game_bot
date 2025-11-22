@@ -525,7 +525,60 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await send_question_to_players(game_id, question_idx + 1, context)
     
     conn.close()
-    return ConversationHandler.END
+    return WAITING_FOR_ANSWER
+
+async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle any text message - check if it's an answer to a question"""
+    if not update.message or not update.message.text:
+        return
+    
+    user_id = update.effective_user.id
+    answer = update.message.text
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT game_id, awaiting_question_idx, id FROM game_players 
+        WHERE user_id = ? AND awaiting_question_idx >= 0
+        LIMIT 1
+    ''', (user_id,))
+    
+    result = cursor.fetchone()
+    if not result:
+        conn.close()
+        return
+    
+    game_id, question_idx, player_idx = result
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO game_answers (game_id, question_idx, player_idx, answer)
+        VALUES (?, ?, ?, ?)
+    ''', (game_id, question_idx, player_idx, answer))
+    
+    cursor.execute('''
+        UPDATE game_players SET awaiting_question_idx = -1 WHERE id = ?
+    ''', (player_idx,))
+    
+    cursor.execute('''
+        SELECT COUNT(*) FROM game_players WHERE game_id = ?
+    ''', (game_id,))
+    total_players = cursor.fetchone()[0]
+    
+    cursor.execute('''
+        SELECT COUNT(*) FROM game_answers 
+        WHERE game_id = ? AND question_idx = ? AND answer IS NOT NULL
+    ''', (game_id, question_idx))
+    answered_count = cursor.fetchone()[0]
+    
+    conn.commit()
+    
+    await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
+    
+    if answered_count >= total_players:
+        await send_question_to_players(game_id, question_idx + 1, context)
+    
+    conn.close()
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate and send all stories to all players"""
@@ -617,6 +670,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     logger.info("Bot started polling...")
