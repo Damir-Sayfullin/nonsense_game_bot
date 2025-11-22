@@ -793,37 +793,6 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         room_code = "UNKNOWN"
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
-    
-    # Get current game info to create a new one
-    cursor.execute('SELECT room_code, created_by FROM games WHERE game_id = ?', (game_id,))
-    game_info = cursor.fetchone()
-    current_room_code = game_info[0]
-    current_admin_id = game_info[1]
-    
-    # Create new game for same room
-    cursor.execute('''
-        INSERT INTO games (room_code, created_by, status, current_question_idx)
-        VALUES (?, ?, 'waiting', -1)
-    ''', (current_room_code, current_admin_id))
-    new_game_id = cursor.lastrowid
-    logger.info(f"[GENERATE_STORIES] Created new game_id={new_game_id} for room {current_room_code}")
-    
-    # Get all players from completed game with their user info
-    cursor.execute('''
-        SELECT user_id, username, first_name FROM game_players WHERE game_id = ?
-        ORDER BY id
-    ''', (game_id,))
-    all_player_data = cursor.fetchall()
-    
-    # Add all players to new game with same admin status
-    for user_id, username, first_name in all_player_data:
-        is_admin = 1 if user_id == current_admin_id else 0
-        cursor.execute('''
-            INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (new_game_id, user_id, username, first_name, is_admin))
-        logger.info(f"[GENERATE_STORIES] Added {first_name} to new game, is_admin={is_admin}")
-    
     conn.commit()
     conn.close()
     
@@ -847,10 +816,10 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError as e:
             logger.error(f"[GENERATE_STORIES] Failed to send stories to {user_id}: {e}")
     
-    # Show room status with player list for new game
-    logger.info(f"[GENERATE_STORIES] Calling update_room_players with new_game_id={new_game_id}, room_code={current_room_code}")
-    await update_room_players(new_game_id, current_room_code, context)
-    logger.info(f"[GENERATE_STORIES] Completed for game_id={game_id}, new_game_id={new_game_id}")
+    # Show room status with player list for completed game
+    logger.info(f"[GENERATE_STORIES] Calling update_room_players for completed game_id={game_id}, room_code={room_code}")
+    await update_room_players(game_id, room_code, context)
+    logger.info(f"[GENERATE_STORIES] Completed for game_id={game_id}")
 
 def build_rotated_story(all_answers, story_num, num_players, player_ids):
     """Build a story with rotated player order"""
