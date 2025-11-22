@@ -181,14 +181,23 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
+    # Get all players
     cursor.execute('''
-        SELECT user_id, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
+        SELECT user_id, first_name, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
     ''', (game_id,))
     players_data = cursor.fetchall()
     
-    players_list = get_players_list_text(game_id, conn)
+    # Build player list text
+    players_list = ""
+    for first_name, is_admin in [(p[1], p[2]) for p in players_data]:
+        if is_admin:
+            players_list += f"• {first_name} 👑\n"
+        else:
+            players_list += f"• {first_name}\n"
+    players_list = players_list.strip()
     
-    for user_id, is_admin in players_data:
+    # Update each player
+    for user_id, first_name, is_admin in players_data:
         if is_admin:
             keyboard = [
                 [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
