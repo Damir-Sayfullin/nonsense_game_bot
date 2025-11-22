@@ -706,26 +706,53 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # Get all players (including the inactive one)
+    # Check if game is already aborted - if so, don't process again
+    cursor.execute('SELECT status FROM games WHERE game_id = ?', (game_id,))
+    status_row = cursor.fetchone()
+    if status_row and status_row[0] == 'aborted':
+        logger.info(f"[INACTIVITY] Game {game_id} already aborted, skipping duplicate timeout")
+        conn.close()
+        return
+    
+    # Get all players (including inactive ones)
     cursor.execute('''
         SELECT user_id, first_name FROM game_players 
         WHERE game_id = ?
     ''', (game_id,))
     all_players = cursor.fetchall()
     
-    # Get room code
-    cursor.execute('SELECT room_code FROM games WHERE game_id = ?', (game_id,))
-    room_row = cursor.fetchone()
-    room_code = room_row[0] if room_row else "UNKNOWN"
+    # Find players who haven't answered current question
+    cursor.execute('''
+        SELECT g.game_id FROM games g WHERE g.game_id = ?
+    ''', (game_id,))
+    cursor.execute('''
+        SELECT current_question_idx FROM games WHERE game_id = ?
+    ''', (game_id,))
+    question_row = cursor.fetchone()
+    current_question = question_row[0] if question_row else 0
     
-    # Remove inactive player
-    cursor.execute('DELETE FROM game_players WHERE game_id = ? AND user_id = ?', (game_id, inactive_user_id))
+    # Get all players who didn't answer this question
+    cursor.execute('''
+        SELECT DISTINCT gp.first_name FROM game_players gp
+        WHERE gp.game_id = ? AND gp.awaiting_question_idx = ?
+    ''', (game_id, current_question))
+    inactive_players = [row[0] for row in cursor.fetchall()]
+    
+    # If no inactive players found, use the provided one
+    if not inactive_players:
+        inactive_players = [inactive_first_name]
+    
+    # Delete inactive players
+    cursor.execute('DELETE FROM game_players WHERE game_id = ?', (game_id,))
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('aborted', game_id))
     conn.commit()
     conn.close()
     
-    # Notify ALL players including the inactive one
-    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок <b>{inactive_first_name}</b> не ответил в течение 2 минут и был исключён из игры.\n\nИгра закончена."
+    # Create message with all inactive players listed with commas
+    inactive_list = ", ".join(f"<b>{name}</b>" for name in inactive_players)
+    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок(и) {inactive_list} не ответили в течение 2 минут и были исключены из игры.\n\nИгра закончена."
+    
+    # Send one message to all players (including inactive ones)
     for user_id, first_name in all_players:
         try:
             await context.bot.send_message(chat_id=user_id, text=message, parse_mode='HTML')
