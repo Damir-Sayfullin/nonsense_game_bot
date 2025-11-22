@@ -133,6 +133,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start_new_game(query, context)
     elif query.data == 'rules':
         await rules(update, context)
+    elif query.data == 'join_by_code':
+        await ask_for_room_code(update, context)
     elif query.data == 'start_game':
         await start_game_session(query, context)
     elif query.data == 'leave_game':
