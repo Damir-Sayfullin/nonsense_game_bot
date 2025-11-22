@@ -581,7 +581,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     conn.close()
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generate and send all stories to all players"""
+    """Generate and send one story to all players"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -593,41 +593,42 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     cursor.execute('''
         SELECT question_idx, player_idx, answer FROM game_answers 
-        WHERE game_id = ? ORDER BY player_idx, question_idx
+        WHERE game_id = ? ORDER BY question_idx, player_idx
     ''', (game_id,))
     
-    answers_by_player = {}
+    answers_by_question = {}
     for row in cursor.fetchall():
         q_idx, p_idx, answer = row
-        if p_idx not in answers_by_player:
-            answers_by_player[p_idx] = {}
-        answers_by_player[p_idx][q_idx] = answer
+        if q_idx not in answers_by_question:
+            answers_by_question[q_idx] = []
+        answers_by_question[q_idx].append(answer)
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
     conn.commit()
     conn.close()
     
-    all_stories = "🎉 <b>ВСЕ ИСТОРИИ:</b>\n\n"
-    for idx, (user_id, first_name) in enumerate(players):
-        story_text = build_story(answers_by_player.get(idx, {}), first_name)
-        all_stories += f"{story_text}\n\n{'─' * 40}\n\n"
+    story_text = build_story(answers_by_question)
     
     for user_id, first_name in players:
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=all_stories,
+                text=f"🎉 <b>История:</b>\n\n{story_text}",
                 parse_mode='HTML'
             )
         except TelegramError as e:
-            logger.error(f"Failed to send stories to {user_id}: {e}")
+            logger.error(f"Failed to send story to {user_id}: {e}")
 
-def build_story(answers, player_name):
-    """Build a story from answers with question numbering"""
-    story = f"<b>{player_name}:</b>\n\n"
-    for idx, question in enumerate(QUESTIONS):
-        answer = answers.get(idx, "—")
-        story += f"{idx + 1}. {question} <b>{answer}</b>\n"
+def build_story(answers_by_question):
+    """Build a story by joining answers with 'и'"""
+    words = []
+    for q_idx in range(len(QUESTIONS)):
+        if q_idx in answers_by_question and answers_by_question[q_idx]:
+            words.append(answers_by_question[q_idx][0])
+        else:
+            words.append("—")
+    
+    story = " и ".join(words)
     return story
 
 def main() -> None:
