@@ -911,17 +911,48 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"[GENERATE_STORIES] Found {len(all_answers)} answers")
     
     cursor.execute('''
-        SELECT room_code FROM games WHERE game_id = ?
+        SELECT room_code, created_by FROM games WHERE game_id = ?
     ''', (game_id,))
-    room_code_row = cursor.fetchone()
-    if room_code_row:
-        room_code = room_code_row[0]
+    game_row = cursor.fetchone()
+    if game_row:
+        room_code = game_row[0]
+        created_by = game_row[1]
         logger.info(f"[GENERATE_STORIES] Room code: {room_code}")
     else:
-        logger.error(f"[GENERATE_STORIES] No room code found for game_id={game_id}")
-        room_code = "UNKNOWN"
+        logger.error(f"[GENERATE_STORIES] No game found for game_id={game_id}")
+        conn.close()
+        return
+    
+    # Get old player data for new game
+    cursor.execute('''
+        SELECT user_id, username, first_name, is_admin FROM game_players 
+        WHERE game_id = ? ORDER BY joined_at
+    ''', (game_id,))
+    old_players = cursor.fetchall()
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
+    
+    # Delete old game data and create new game with same room_code
+    cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
+    cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (game_id,))
+    cursor.execute('DELETE FROM game_players WHERE game_id = ?', (game_id,))
+    cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
+    
+    # Create new game
+    cursor.execute('''
+        INSERT INTO games (room_code, created_by, status, current_question_idx)
+        VALUES (?, ?, ?, ?)
+    ''', (room_code, created_by, 'waiting', 0))
+    
+    new_game_id = cursor.lastrowid
+    
+    # Add old players to new game
+    for user_id, username, first_name, is_admin in old_players:
+        cursor.execute('''
+            INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (new_game_id, user_id, username, first_name, is_admin))
+    
     conn.commit()
     conn.close()
     
@@ -945,9 +976,9 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError as e:
             logger.error(f"[GENERATE_STORIES] Failed to send stories to {user_id}: {e}")
     
-    # Show room status with player list for completed game
-    logger.info(f"[GENERATE_STORIES] Calling update_room_players for completed game_id={game_id}, room_code={room_code}")
-    await update_room_players(game_id, room_code, context)
+    # Show new room status
+    logger.info(f"[GENERATE_STORIES] Calling update_room_players for new game_id={new_game_id}, room_code={room_code}")
+    await update_room_players(new_game_id, room_code, context)
     logger.info(f"[GENERATE_STORIES] Completed for game_id={game_id}")
 
 def build_rotated_story(all_answers, story_num, num_players, player_ids):
