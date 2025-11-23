@@ -79,6 +79,15 @@ def init_db():
         )
     ''')
     
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS story_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_code TEXT,
+            story_text TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     conn.close()
     logger.info("Database initialized")
@@ -98,6 +107,29 @@ QUESTIONS = [
 
 WAITING_FOR_ANSWER = 1
 WAITING_FOR_ROOM_CODE = 2
+
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show last 10 stories"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT story_text, created_at FROM story_history 
+        ORDER BY created_at DESC LIMIT 10
+    ''')
+    
+    stories = cursor.fetchall()
+    conn.close()
+    
+    if not stories:
+        await update.message.reply_text("📚 Нет сохраненных историй")
+        return
+    
+    message = "📚 <b>ПОСЛЕДНИЕ 10 ИСТОРИЙ:</b>\n\n"
+    for idx, (story_text, created_at) in enumerate(stories, 1):
+        message += f"{idx}. {story_text}\n\n"
+    
+    await update.message.reply_text(message, parse_mode='HTML')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start command"""
@@ -1067,6 +1099,14 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('completed', game_id))
     
+    # Save all stories to history BEFORE deleting game data
+    for story_num in range(num_players):
+        story_text = build_rotated_story(all_answers, story_num, num_players, player_ids)
+        cursor.execute('''
+            INSERT INTO story_history (room_code, story_text)
+            VALUES (?, ?)
+        ''', (room_code, story_text))
+    
     # Delete old game data and create new game with same room_code
     cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
     cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (game_id,))
@@ -1094,9 +1134,11 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     player_ids = [p[0] for p in players]
     
     all_stories = "🎉 <b>ИСТОРИИ:</b>\n\n"
+    stories_list = []
     
     for story_num in range(num_players):
         story_text = build_rotated_story(all_answers, story_num, num_players, player_ids)
+        stories_list.append(story_text)
         all_stories += f"{story_text}\n\n"
     
     logger.info(f"[GENERATE_STORIES] Sending stories to {num_players} players")
@@ -1179,6 +1221,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("rules", rules))
     app.add_handler(CommandHandler("reset", reset_game))
+    app.add_handler(CommandHandler("history", history))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
     app.add_handler(CallbackQueryHandler(button_handler))
