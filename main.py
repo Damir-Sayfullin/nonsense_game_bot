@@ -1140,8 +1140,10 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     for story_num in range(num_players):
         story_text = build_rotated_story(all_answers, story_num, num_players, player_ids)
-        stories_list.append(story_text)
-        all_stories += f"{story_text}\n\n"
+        # Format: first letter capital, rest lowercase
+        formatted_story = story_text[0].upper() + story_text[1:].lower() if story_text else ""
+        stories_list.append(formatted_story)
+        all_stories += f"{formatted_story}\n\n"
     
     logger.info(f"[GENERATE_STORIES] Sending stories to {num_players} players")
     for player_id, user_id, first_name in players:
