@@ -14,6 +14,9 @@ from telegram.error import TelegramError
 MSK = pytz.timezone('Europe/Moscow')
 ADMIN_USER_ID = 933698505
 
+# Global dictionary to track timeout tasks: {(game_id, user_id, question_idx): asyncio.Task}
+timeout_tasks = {}
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -922,7 +925,7 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
     
     # Create message with all inactive players listed with commas
     inactive_list = ", ".join(f"<b>{name}</b>" for name in inactive_players)
-    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок(и) {inactive_list} не ответили в течение 2 минут.\n\nКомната была удалена и игра закончена."
+    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок(и) {inactive_list} не ответили в течение 5 минут.\n\nКомната была удалена и игра закончена."
     
     # Send one message to all players (including inactive ones)
     for user_id, first_name in all_players:
@@ -931,10 +934,52 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
         except TelegramError as e:
             logger.error(f"Failed to notify {first_name}: {e}")
 
-async def start_inactivity_timeout(game_id, user_id, first_name, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Start a 2-minute inactivity timeout for a player"""
-    await asyncio.sleep(120)  # 2 minutes
-    await end_game_due_to_inactivity(game_id, user_id, first_name, context)
+async def start_inactivity_timeout(game_id, user_id, first_name, question_idx, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start a 5-minute inactivity timeout for a player on a specific question"""
+    global timeout_tasks
+    task_key = (game_id, user_id, question_idx)
+    
+    try:
+        await asyncio.sleep(300)  # 5 minutes
+        # Only cancel the game if this timeout wasn't already cancelled
+        if task_key in timeout_tasks and timeout_tasks[task_key] is not None:
+            await end_game_due_to_inactivity(game_id, user_id, first_name, context)
+    except asyncio.CancelledError:
+        # Task was cancelled, which is expected when player answers
+        pass
+    finally:
+        # Clean up the task reference
+        if task_key in timeout_tasks:
+            del timeout_tasks[task_key]
+
+async def cancel_question_timeouts(game_id, question_idx) -> None:
+    """Cancel all timeout tasks for a specific question"""
+    global timeout_tasks
+    
+    # Find and cancel all timeouts for this question
+    keys_to_remove = []
+    for key in list(timeout_tasks.keys()):
+        if key[0] == game_id and key[2] == question_idx:
+            task = timeout_tasks[key]
+            if task and not task.done():
+                task.cancel()
+            keys_to_remove.append(key)
+    
+    # Remove the keys
+    for key in keys_to_remove:
+        if key in timeout_tasks:
+            del timeout_tasks[key]
+
+async def cancel_player_timeout(game_id, user_id, question_idx) -> None:
+    """Cancel timeout task for a specific player on a specific question"""
+    global timeout_tasks
+    
+    task_key = (game_id, user_id, question_idx)
+    if task_key in timeout_tasks:
+        task = timeout_tasks[task_key]
+        if task and not task.done():
+            task.cancel()
+        del timeout_tasks[task_key]
 
 async def send_question_to_players(game_id, question_idx, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send current question to all players"""
@@ -990,7 +1035,8 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
             conn.commit()
             
             # Start inactivity timeout for this player
-            asyncio.create_task(start_inactivity_timeout(game_id, user_id, first_name, context))
+            task = asyncio.create_task(start_inactivity_timeout(game_id, user_id, first_name, question_idx, context))
+            timeout_tasks[(game_id, user_id, question_idx)] = task
         except TelegramError as e:
             logger.error(f"Failed to send message to {user_id}: {e}")
     
