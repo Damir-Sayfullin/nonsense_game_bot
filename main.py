@@ -6,9 +6,12 @@ import random
 import string
 import asyncio
 from datetime import datetime
+import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.error import TelegramError
+
+MSK = pytz.timezone('Europe/Moscow')
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -101,11 +104,12 @@ def init_db():
     logger.info("Database initialized")
 
 def log_bot_startup():
-    """Log bot startup time to database"""
+    """Log bot startup time to database in MSK"""
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO bot_sessions (started_at) VALUES (CURRENT_TIMESTAMP)')
+        msk_time = datetime.now(MSK).strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('INSERT INTO bot_sessions (started_at) VALUES (?)', (msk_time,))
         conn.commit()
         conn.close()
         logger.info('Bot startup logged to database')
@@ -158,7 +162,7 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("❌ Ошибка при обработке времени.")
         return
     
-    now = datetime.now()
+    now = datetime.now(MSK)
     uptime = now - startup_time
     
     days = uptime.days
@@ -166,7 +170,7 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     minutes = (uptime.seconds % 3600) // 60
     seconds = uptime.seconds % 60
     
-    response = '⏱ <b>ИНФОРМАЦИЯ О БОТЕ</b>\n\n'
+    response = '⏱ <b>ИНФОРМАЦИЯ О БОТЕ (МСК)</b>\n\n'
     response += f'🔄 Время запуска: {startup_time.strftime("%d.%m.%Y %H:%M:%S")}\n'
     response += f'⌛ Время работы: {days}д {hours}ч {minutes}м {seconds}с'
     
