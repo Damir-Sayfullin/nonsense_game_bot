@@ -12,6 +12,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from telegram.error import TelegramError
 
 MSK = pytz.timezone('Europe/Moscow')
+ADMIN_USER_ID = 933698505
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -176,6 +177,66 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     response += f'⌛ Время работы: {days}д {hours}ч {minutes}м {seconds}с'
     
     await update.message.reply_text(response, parse_mode='HTML')
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show bot statistics (admin only)"""
+    user_id = update.effective_user.id
+    
+    if user_id != ADMIN_USER_ID:
+        await update.message.reply_text("❌ У вас нет доступа к этой команде.")
+        return
+    
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Count active games
+        cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('in_progress',))
+        active_games = cursor.fetchone()[0]
+        
+        # Count completed games
+        cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('completed',))
+        completed_games = cursor.fetchone()[0]
+        
+        # Count active rooms
+        cursor.execute('SELECT COUNT(DISTINCT room_code) FROM games WHERE status = ?', ('waiting',))
+        active_rooms = cursor.fetchone()[0]
+        
+        # Count unique players
+        cursor.execute('SELECT COUNT(DISTINCT user_id) FROM game_players')
+        total_players = cursor.fetchone()[0]
+        
+        # Count total stories
+        cursor.execute('SELECT COUNT(*) FROM story_history')
+        total_stories = cursor.fetchone()[0]
+        
+        # Count total unique rooms that played
+        cursor.execute('SELECT COUNT(DISTINCT room_code) FROM games WHERE status != ?', ('waiting',))
+        rooms_played = cursor.fetchone()[0]
+        
+        # Get total games created
+        cursor.execute('SELECT COUNT(*) FROM games')
+        total_games = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        response = '📊 <b>СТАТИСТИКА БОТА</b>\n\n'
+        response += f'🎮 <b>Игры:</b>\n'
+        response += f'  ▸ Активных: {active_games}\n'
+        response += f'  ▸ Завершено: {completed_games}\n'
+        response += f'  ▸ Всего создано: {total_games}\n\n'
+        response += f'🏠 <b>Комнаты:</b>\n'
+        response += f'  ▸ Активных: {active_rooms}\n'
+        response += f'  ▸ Сыграли игры: {rooms_played}\n\n'
+        response += f'👥 <b>Игроки:</b>\n'
+        response += f'  ▸ Уникальных: {total_players}\n\n'
+        response += f'📚 <b>Истории:</b>\n'
+        response += f'  ▸ Сохранено: {total_stories}\n'
+        
+        await update.message.reply_text(response, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f'Error getting stats: {e}')
+        await update.message.reply_text("❌ Ошибка при получении статистики.")
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show last 10 stories"""
@@ -1297,6 +1358,7 @@ def main() -> None:
     app.add_handler(CommandHandler("reset", reset_game))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("bot_uptime", bot_uptime))
+    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
     app.add_handler(CallbackQueryHandler(button_handler))
