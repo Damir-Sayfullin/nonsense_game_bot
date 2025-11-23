@@ -1142,6 +1142,8 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("✅ Ответ сохранён!\n\nЖди других игроков...")
     
     if answered_count >= total_players:
+        # Cancel all timeouts for this question since all players answered
+        await cancel_question_timeouts(game_id, question_idx)
         await send_question_to_players(game_id, question_idx + 1, context)
     
     conn.close()
@@ -1154,12 +1156,6 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     user_id = update.effective_user.id
     answer = update.message.text
-    
-    # Cancel any pending inactivity timeout for this user
-    key = f"timeout_{user_id}"
-    if key in context.user_data and context.user_data[key]:
-        context.user_data[key].cancel()
-        context.user_data[key] = None
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -1185,6 +1181,9 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     
     game_id, question_idx, player_idx = result
+    
+    # Cancel this player's timeout for the current question
+    await cancel_player_timeout(game_id, user_id, question_idx)
     
     # Save answer and update player status
     cursor.execute('''
@@ -1238,6 +1237,8 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 logger.error(f"Failed to update progress for {player_user_id}: {e}")
     
     if answered_count >= total_players:
+        # Cancel all timeouts for this question since all players answered
+        await cancel_question_timeouts(game_id, question_idx)
         await send_question_to_players(game_id, question_idx + 1, context)
 
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
