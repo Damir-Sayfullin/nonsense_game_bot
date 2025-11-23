@@ -127,7 +127,9 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     message = "📚 <b>ПОСЛЕДНИЕ 10 ИСТОРИЙ:</b>\n\n"
     for idx, (story_text, created_at) in enumerate(stories, 1):
-        message += f"{idx}. {story_text}\n\n"
+        # Format: first letter capital, rest lowercase
+        formatted_story = story_text[0].upper() + story_text[1:].lower() if story_text else ""
+        message += f"{idx}. {formatted_story}\n\n"
     
     await update.message.reply_text(message, parse_mode='HTML')
 
