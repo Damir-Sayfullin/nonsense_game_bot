@@ -179,13 +179,7 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(response, parse_mode='HTML')
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show bot statistics (admin only)"""
-    user_id = update.effective_user.id
-    
-    if user_id != ADMIN_USER_ID:
-        await update.message.reply_text("❌ У вас нет доступа к этой команде.")
-        return
-    
+    """Show bot statistics"""
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -240,9 +234,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show available commands"""
-    user_id = update.effective_user.id
-    is_admin = user_id == ADMIN_USER_ID
-    
     response = "📋 <b>ДОСТУПНЫЕ КОМАНДЫ:</b>\n\n"
     response += "<b>🎮 Игра:</b>\n"
     response += "/start - Начать новую игру\n"
@@ -251,10 +242,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     response += "/reset - Удалить сломанную комнату\n\n"
     response += "<b>ℹ️ Информация:</b>\n"
     response += "/bot_uptime - Время работы бота\n"
-    
-    if is_admin:
-        response += "\n<b>👑 Команды администратора:</b>\n"
-        response += "/stats - Статистика бота\n"
+    response += "/stats - Статистика бота\n"
     
     await update.message.reply_text(response, parse_mode='HTML')
 
