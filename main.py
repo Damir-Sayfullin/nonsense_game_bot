@@ -1254,6 +1254,7 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     players = cursor.fetchall()
     num_players = len(players)
+    player_ids = [p[0] for p in players]
     logger.info(f"[GENERATE_STORIES] Found {num_players} players: {players}")
     
     cursor.execute('''
@@ -1317,8 +1318,6 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     conn.commit()
     conn.close()
-    
-    player_ids = [p[0] for p in players]
     
     all_stories = "🎉 <b>ИСТОРИИ:</b>\n\n"
     stories_list = []
