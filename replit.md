@@ -66,9 +66,19 @@
 2. Install: `pip install -r requirements.txt`
 3. Run: `python main.py`
 
+## Commands
+- `/start` - Начать новую игру или присоединиться к существующей
+- `/rules` - Показать правила игры
+- `/history` - Показать последние 10 сохраненных историй
+- `/reset` - Удалить все сломанные комнаты игрока
+- `/bot_uptime` - Время запуска и время работы бота
+- `/stats` - Статистика бота (кол-во игр, комнат, игроков, историй)
+- `/help` - Список всех доступных команд
+
 ## User Preferences
 - Russian language interface
 - Room-based gameplay with 4-char codes
-- No buttons for rules in main menu - use `/rules` command instead
+- All commands available through slash commands
 - Emergency `/reset` command to delete broken rooms
+- Statistics accessible to all users via `/stats`
 
