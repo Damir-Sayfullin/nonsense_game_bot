@@ -158,6 +158,7 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     
     try:
         startup_time = datetime.strptime(startup_time_str, '%Y-%m-%d %H:%M:%S')
+        startup_time = MSK.localize(startup_time)
     except:
         await update.message.reply_text("❌ Ошибка при обработке времени.")
         return
