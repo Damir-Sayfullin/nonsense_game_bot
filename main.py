@@ -750,7 +750,7 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
     
     # Create message with all inactive players listed with commas
     inactive_list = ", ".join(f"<b>{name}</b>" for name in inactive_players)
-    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок(и) {inactive_list} не ответили в течение 2 минут и были исключены из игры.\n\nИгра закончена."
+    message = f"⏱️ <b>Игра отменена!</b>\n\n❌ Игрок(и) {inactive_list} не ответили в течение 2 минут.\n\nКомната была удалена и игра закончена."
     
     # Send one message to all players (including inactive ones)
     for user_id, first_name in all_players:
