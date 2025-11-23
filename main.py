@@ -238,6 +238,26 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f'Error getting stats: {e}')
         await update.message.reply_text("❌ Ошибка при получении статистики.")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show available commands"""
+    user_id = update.effective_user.id
+    is_admin = user_id == ADMIN_USER_ID
+    
+    response = "📋 <b>ДОСТУПНЫЕ КОМАНДЫ:</b>\n\n"
+    response += "<b>🎮 Игра:</b>\n"
+    response += "/start - Начать новую игру\n"
+    response += "/rules - Показать правила\n"
+    response += "/history - Последние 10 историй\n"
+    response += "/reset - Удалить сломанную комнату\n\n"
+    response += "<b>ℹ️ Информация:</b>\n"
+    response += "/bot_uptime - Время работы бота\n"
+    
+    if is_admin:
+        response += "\n<b>👑 Команды администратора:</b>\n"
+        response += "/stats - Статистика бота\n"
+    
+    await update.message.reply_text(response, parse_mode='HTML')
+
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show last 10 stories"""
     conn = sqlite3.connect(DB_FILE)
@@ -1359,6 +1379,7 @@ def main() -> None:
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("bot_uptime", bot_uptime))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
     app.add_handler(CallbackQueryHandler(button_handler))
