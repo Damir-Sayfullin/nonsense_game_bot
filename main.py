@@ -1135,6 +1135,20 @@ def build_rotated_story(all_answers, story_num, num_players, player_ids):
     story = " ".join(words)
     return story
 
+async def self_ping_task(app):
+    """Self-ping every 5 minutes to keep bot alive"""
+    while True:
+        try:
+            await asyncio.sleep(300)  # 5 minutes
+            await app.bot.get_me()
+            logger.info("[SELF_PING] Bot pinged successfully")
+        except Exception as e:
+            logger.error(f"[SELF_PING] Ping failed: {e}")
+
+async def post_init(app):
+    """Called after bot initialization"""
+    asyncio.create_task(self_ping_task(app))
+
 def main() -> None:
     """Start the bot"""
     init_db()
@@ -1145,7 +1159,7 @@ def main() -> None:
         print("ERROR: Please set TELEGRAM_BOT_TOKEN environment variable")
         return
     
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(post_init).build()
 
     conv_handler = ConversationHandler(
         entry_points=[
