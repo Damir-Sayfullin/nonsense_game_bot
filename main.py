@@ -144,6 +144,13 @@ def init_db():
                 last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # Migration: add username column if it doesn't exist
+        try:
+            cursor.execute('ALTER TABLE user_activity ADD COLUMN username TEXT')
+            conn.commit()
+        except Exception:
+            pass
     else:
         # SQLite syntax
         cursor.execute('''
@@ -227,6 +234,12 @@ def init_db():
                 last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # Migration: add username column if it doesn't exist
+        try:
+            cursor.execute('ALTER TABLE user_activity ADD COLUMN username TEXT')
+        except sqlite3.OperationalError:
+            pass
     
     conn.commit()
     conn.close()
