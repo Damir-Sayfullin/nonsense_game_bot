@@ -1589,12 +1589,19 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
     
     # Create new game
-    cursor.execute('''
-        INSERT INTO games (room_code, created_by, status, current_question_idx)
-        VALUES (?, ?, ?, ?)
-    ''', (room_code, created_by, 'waiting', 0))
-    
-    new_game_id = cursor.lastrowid
+    if USE_POSTGRES:
+        cursor.execute('''
+            INSERT INTO games (room_code, created_by, status, current_question_idx)
+            VALUES (%s, %s, %s, %s)
+            RETURNING game_id
+        ''', (room_code, created_by, 'waiting', 0))
+        new_game_id = cursor.fetchone()[0]
+    else:
+        cursor.execute('''
+            INSERT INTO games (room_code, created_by, status, current_question_idx)
+            VALUES (?, ?, ?, ?)
+        ''', (room_code, created_by, 'waiting', 0))
+        new_game_id = cursor.lastrowid
     
     # Add old players to new game
     for user_id, username, first_name, is_admin in old_players:
