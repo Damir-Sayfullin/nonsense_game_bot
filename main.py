@@ -52,29 +52,24 @@ def get_db_connection():
     if USE_POSTGRES:
         try:
             import psycopg2
-            conn = psycopg2.connect(DATABASE_URL)
-            # Wrap cursor to handle placeholder conversion
-            original_cursor = conn.cursor
-            def cursor_wrapper(*args, **kwargs):
-                return CursorWrapper(original_cursor(*args, **kwargs), True)
-            conn.cursor = cursor_wrapper
-            return conn
+            return psycopg2.connect(DATABASE_URL)
         except Exception as e:
             logger.error(f"Failed to connect to PostgreSQL: {e}. Falling back to SQLite")
             return sqlite3.connect(DB_FILE)
     else:
-        conn = sqlite3.connect(DB_FILE)
-        # Wrap cursor for consistency
-        original_cursor = conn.cursor
-        def cursor_wrapper(*args, **kwargs):
-            return CursorWrapper(original_cursor(*args, **kwargs), False)
-        conn.cursor = cursor_wrapper
-        return conn
+        return sqlite3.connect(DB_FILE)
+
+def get_cursor(conn):
+    """Get a wrapped cursor that handles placeholder conversion"""
+    if USE_POSTGRES:
+        return CursorWrapper(conn.cursor(), True)
+    else:
+        return CursorWrapper(conn.cursor(), False)
 
 def init_db():
     """Initialize database"""
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     if USE_POSTGRES:
         # PostgreSQL syntax
@@ -224,7 +219,7 @@ def log_bot_startup():
     """Log bot startup time to database in MSK"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         msk_time = datetime.now(MSK).strftime('%Y-%m-%d %H:%M:%S')
         if USE_POSTGRES:
             cursor.execute('INSERT INTO bot_sessions (started_at) VALUES (%s)', (msk_time,))
@@ -240,7 +235,7 @@ def get_bot_uptime():
     """Get bot startup time"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         if USE_POSTGRES:
             cursor.execute('SELECT started_at FROM bot_sessions ORDER BY started_at DESC LIMIT 1')
         else:
@@ -310,7 +305,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show bot statistics"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         
         # Count active games (in_progress)
         if USE_POSTGRES:
@@ -378,7 +373,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show last 10 stories"""
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT story_text, created_at FROM story_history 
@@ -406,7 +401,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # Check if user is in an active game
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT g.status FROM game_players gp
@@ -471,7 +466,7 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user_id = update.effective_user.id
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     # Find all games where this user is playing
     cursor.execute('''
@@ -536,7 +531,7 @@ def set_room_code_in_context(context, code):
 
 def get_players_list_text(game_id, conn):
     """Get formatted player list with admin crown"""
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     cursor.execute('''
         SELECT first_name, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
     ''', (game_id,))
@@ -554,7 +549,7 @@ async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_
     """Update all players in room with current player list"""
     logger.info(f"[UPDATE_ROOM_PLAYERS] Called with game_id={game_id}, room_code={room_code}")
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     # Get game status
     cursor.execute('SELECT status FROM games WHERE game_id = ?', (game_id,))
@@ -669,7 +664,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     # If we have a room code, check if we're the creator and can restart it
     if room_code:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             SELECT created_by FROM games WHERE room_code = ? AND status = 'completed'
         ''', (room_code,))
@@ -688,7 +683,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     room_code = generate_room_code()
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     user_id = query.from_user.id
     
@@ -728,7 +723,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # Store message ID for future edits
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     cursor.execute('''
         INSERT INTO game_messages (game_id, user_id, message_id)
         VALUES (?, ?, ?)
@@ -741,7 +736,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room_code: str) -> None:
     """Start a new game in an existing room (after completion)"""
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT game_id FROM games WHERE room_code = ? AND status = 'completed'
@@ -823,7 +818,7 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT game_id FROM games 
@@ -875,7 +870,7 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Store message ID for this player (delete old one first if exists)
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     cursor.execute('DELETE FROM game_messages WHERE game_id = ? AND user_id = ?', (game_id, user_id))
     cursor.execute('''
         INSERT INTO game_messages (game_id, user_id, message_id)
@@ -901,7 +896,7 @@ async def leave_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT game_id, created_by FROM games 
@@ -962,7 +957,7 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT game_id, created_by FROM games 
@@ -1005,7 +1000,7 @@ async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_n
     """End game because a player was inactive"""
     logger.info(f"[INACTIVITY] Ending game {game_id} due to inactivity of {inactive_first_name}")
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     # Check if game is already aborted - if so, don't process again
     cursor.execute('SELECT status FROM games WHERE game_id = ?', (game_id,))
@@ -1111,7 +1106,7 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     """Send current question to all players"""
     logger.info(f"[SEND_QUESTION_TO_PLAYERS] Called with game_id={game_id}, question_idx={question_idx}, total_questions={len(QUESTIONS)}")
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT id, user_id, first_name FROM game_players WHERE game_id = ?
@@ -1143,7 +1138,7 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     
     # Now send messages AFTER closing database
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     for user_id, first_name, player_id in updates:
         try:
@@ -1200,7 +1195,7 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     answer = update.message.text
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT game_id, awaiting_question_idx, id FROM game_players 
@@ -1284,7 +1279,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     answer = update.message.text
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT game_id, awaiting_question_idx, id FROM game_players 
@@ -1371,7 +1366,7 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate and send multiple rotated stories to all players"""
     logger.info(f"[GENERATE_STORIES] Called with game_id={game_id}")
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     
     cursor.execute('''
         SELECT id, user_id, first_name FROM game_players WHERE game_id = ?
