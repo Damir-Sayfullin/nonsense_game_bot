@@ -1211,8 +1211,10 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(error_message, reply_markup=reply_markup, parse_mode='HTML')
+        conn.commit()
         conn.close()
+        
+        await query.edit_message_text(error_message, reply_markup=reply_markup, parse_mode='HTML')
         return
     
     cursor.execute('''
