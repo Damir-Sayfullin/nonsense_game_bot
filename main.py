@@ -515,6 +515,40 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error(f'Error getting admin stats: {e}')
         await update.message.reply_text("❌ Ошибка при получении статистики.")
 
+async def about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show about bot information"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
+    
+    response = "ℹ️ <b>О БОТЕ</b>\n\n"
+    response += "🤪 <b>Чепуха - Party Game Bot</b>\n"
+    response += "Русскоязычный многопользовательский Telegram бот для игры в 'Чепуху' — весёлую партийную игру, где 2-6 игроков последовательно отвечают на забавные вопросы без видимости ответов друг друга.\n\n"
+    
+    response += "<b>👨‍💻 Разработчик:</b>\n"
+    response += "<a href=\"https://t.me/DamirS16\">@DamirS16</a>\n\n"
+    
+    response += "<b>📦 Исходный код:</b>\n"
+    response += "<a href=\"https://github.com/Damir-Sayfullin/nonsense_game_bot\">GitHub Repository</a>\n\n"
+    
+    response += "<b>🛠️ Технологии:</b>\n"
+    response += "• Python 3.11+\n"
+    response += "• python-telegram-bot 20.3\n"
+    response += "• SQLite3 (разработка)\n"
+    response += "• PostgreSQL (production)\n"
+    response += "• asyncio\n"
+    response += "• pytz\n\n"
+    
+    response += "<b>🚀 Функции:</b>\n"
+    response += "• 🎮 Room-based система с 4-символьными кодами\n"
+    response += "• ❓ 6 вопросов для каждой игры\n"
+    response += "• 🎉 Ротированные истории для каждого игрока\n"
+    response += "• 📊 Полная статистика и история игр\n"
+    response += "• 👑 Система администраторов\n"
+    response += "• ⏱️ 5-минутный таймаут на ответы\n"
+    
+    await update.message.reply_text(response, parse_mode='HTML')
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show available commands"""
     user_id = update.effective_user.id
@@ -530,6 +564,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     response += "<b>ℹ️ Информация:</b>\n"
     response += "/bot_uptime - Время работы бота\n"
     response += "/stats - Статистика бота\n"
+    response += "/about - О боте и разработчике\n"
     
     if user_id == ADMIN_USER_ID:
         response += "\n<b>👑 Админ:</b>\n"
@@ -1780,6 +1815,7 @@ def main() -> None:
     app.add_handler(CommandHandler("bot_uptime", bot_uptime))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("admin_stats", admin_stats))
+    app.add_handler(CommandHandler("about", about))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
