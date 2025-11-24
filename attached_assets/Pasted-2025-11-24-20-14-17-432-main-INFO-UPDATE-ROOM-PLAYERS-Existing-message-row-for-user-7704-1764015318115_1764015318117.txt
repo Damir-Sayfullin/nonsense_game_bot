@@ -1,0 +1,26 @@
+2025-11-24 20:14:17,432 - __main__ - INFO - [UPDATE_ROOM_PLAYERS] Existing message_row for user 770432711: (2925,)
+2025-11-24 20:14:17,432 - __main__ - INFO - [UPDATE_ROOM_PLAYERS] Editing message 2925 for user 770432711
+2025-11-24 20:14:17,624 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/editMessageText "HTTP/1.1 200 OK"
+2025-11-24 20:14:17,625 - __main__ - INFO - [UPDATE_ROOM_PLAYERS] Successfully edited message for user 770432711
+2025-11-24 20:14:17,625 - __main__ - INFO - [UPDATE_ROOM_PLAYERS] Completed for game_id=2
+2025-11-24 20:14:26,716 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/getUpdates "HTTP/1.1 200 OK"
+2025-11-24 20:14:33,743 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/getUpdates "HTTP/1.1 200 OK"
+2025-11-24 20:14:34,205 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/answerCallbackQuery "HTTP/1.1 200 OK"
+2025-11-24 20:14:34,420 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/editMessageText "HTTP/1.1 200 OK"
+2025-11-24 20:14:34,421 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=2, question_idx=0, total_questions=6
+2025-11-24 20:14:34,435 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 0 to 3 players
+2025-11-24 20:14:34,632 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/sendMessage "HTTP/1.1 200 OK"
+2025-11-24 20:14:34,817 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/sendMessage "HTTP/1.1 200 OK"
+2025-11-24 20:14:35,001 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/sendMessage "HTTP/1.1 200 OK"
+2025-11-24 20:14:41,786 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/getUpdates "HTTP/1.1 200 OK"
+2025-11-24 20:14:41,826 - __main__ - ERROR - Update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='Дамир', id=933698505, last_name='Сайфуллин', type=<ChatType.PRIVATE>, username='DamirS16'), date=datetime.datetime(2025, 11, 24, 20, 14, 31, tzinfo=<UTC>), delete_chat_photo=False, from_user=User(first_name='Дамир', id=933698505, is_bot=False, language_code='ru', last_name='Сайфуллин', username='DamirS16'), group_chat_created=False, message_id=2929, supergroup_chat_created=False, text='Умный'), update_id=90425446) caused error syntax error at or near "OR"
+LINE 2:         INSERT OR REPLACE INTO game_answers (game_id, questi...
+                       ^
+2025-11-24 20:14:49,252 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/getUpdates "HTTP/1.1 200 OK"
+2025-11-24 20:14:49,287 - __main__ - ERROR - Update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='Эльвира', id=5040984506, type=<ChatType.PRIVATE>, username='elv_amirova'), date=datetime.datetime(2025, 11, 24, 20, 14, 39, tzinfo=<UTC>), delete_chat_photo=False, from_user=User(first_name='Эльвира', id=5040984506, is_bot=False, language_code='ru', username='elv_amirova'), group_chat_created=False, message_id=2930, supergroup_chat_created=False, text='упоротый'), update_id=90425447) caused error syntax error at or near "OR"
+LINE 2:         INSERT OR REPLACE INTO game_answers (game_id, questi...
+                       ^
+2025-11-24 20:14:58,208 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8229014145:AAEG7YqvaEtZzO3kiveHEqwjkJvhHIlFQ84/getUpdates "HTTP/1.1 200 OK"
+2025-11-24 20:14:58,243 - __main__ - ERROR - Update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='Ильсаф', id=770432711, type=<ChatType.PRIVATE>, username='Ilsaf8075'), date=datetime.datetime(2025, 11, 24, 20, 14, 48, tzinfo=<UTC>), delete_chat_photo=False, from_user=User(first_name='Ильсаф', id=770432711, is_bot=False, language_code='ru', username='Ilsaf8075'), group_chat_created=False, message_id=2931, supergroup_chat_created=False, text='Убийственный'), update_id=90425448) caused error syntax error at or near "OR"
+LINE 2:         INSERT OR REPLACE INTO game_answers (game_id, questi...
+                       

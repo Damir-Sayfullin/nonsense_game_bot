@@ -1485,8 +1485,13 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     game_id, question_idx, player_idx = result
     
+    # Delete existing answer if any (works for both PostgreSQL and SQLite)
     cursor.execute('''
-        INSERT OR REPLACE INTO game_answers (game_id, question_idx, player_idx, answer)
+        DELETE FROM game_answers WHERE game_id = ? AND question_idx = ? AND player_idx = ?
+    ''', (game_id, question_idx, player_idx))
+    
+    cursor.execute('''
+        INSERT INTO game_answers (game_id, question_idx, player_idx, answer)
         VALUES (?, ?, ?, ?)
     ''', (game_id, question_idx, player_idx, answer))
     
@@ -1598,8 +1603,13 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await cancel_player_timeout(game_id, user_id, question_idx)
     
     # Save answer and update player status
+    # Delete existing answer if any (works for both PostgreSQL and SQLite)
     cursor.execute('''
-        INSERT OR REPLACE INTO game_answers (game_id, question_idx, player_idx, answer)
+        DELETE FROM game_answers WHERE game_id = ? AND question_idx = ? AND player_idx = ?
+    ''', (game_id, question_idx, player_idx))
+    
+    cursor.execute('''
+        INSERT INTO game_answers (game_id, question_idx, player_idx, answer)
         VALUES (?, ?, ?, ?)
     ''', (game_id, question_idx, player_idx, answer))
     
