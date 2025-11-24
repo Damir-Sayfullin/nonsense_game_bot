@@ -76,7 +76,7 @@ def init_db():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS games (
                 game_id SERIAL PRIMARY KEY,
-                room_code TEXT UNIQUE,
+                room_code TEXT,
                 created_by BIGINT,
                 status TEXT,
                 current_question_idx INTEGER DEFAULT 0,
@@ -148,6 +148,16 @@ def init_db():
         # Commit all table creations before migrations
         conn.commit()
         
+        # Create partial unique index for waiting games only
+        try:
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS games_room_code_waiting 
+                ON games(room_code) WHERE status = 'waiting'
+            ''')
+            conn.commit()
+        except Exception:
+            pass
+        
         # Migration: add username column if it doesn't exist
         try:
             cursor.execute('ALTER TABLE user_activity ADD COLUMN username TEXT')
@@ -159,7 +169,7 @@ def init_db():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS games (
                 game_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                room_code TEXT UNIQUE,
+                room_code TEXT,
                 created_by INTEGER,
                 status TEXT,
                 current_question_idx INTEGER DEFAULT 0,
