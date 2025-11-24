@@ -62,9 +62,20 @@
 9. Автоматически создаётся новая комната → можно играть снова
 
 ## Setup
+
+### На Replit (для тестирования):
 1. Set `TELEGRAM_BOT_TOKEN` environment variable with your bot token from BotFather
 2. Install: `pip install -r requirements.txt`
 3. Run: `python main.py`
+
+### На Railway (для продакшена):
+1. Создать PostgreSQL add-on в Railway
+2. Скопировать `DATABASE_URL` из переменных окружения Railway
+3. Установить переменную `DATABASE_URL` в Railway
+4. Установить `TELEGRAM_BOT_TOKEN` 
+5. Бот автоматически будет использовать PostgreSQL для постоянного хранения данных
+
+**Важно:** Без PostgreSQL или другого постоянного хранилища все истории теряются при перезагрузке контейнера!
 
 ## Commands
 - `/start` - Начать новую игру или присоединиться к существующей

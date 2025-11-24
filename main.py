@@ -24,11 +24,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DB_FILE = 'game_data.db'
+DATABASE_URL = os.getenv('DATABASE_URL')
+USE_POSTGRES = DATABASE_URL is not None
 
 def init_db():
     """Initialize database"""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
+    if USE_POSTGRES:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL)
+            cursor = conn.cursor()
+        except Exception as e:
+            logger.error(f"Failed to connect to PostgreSQL: {e}. Falling back to SQLite")
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+    else:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (

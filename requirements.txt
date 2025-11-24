@@ -1,3 +1,5 @@
 python-telegram-bot==20.3
 pytz
 telegram
+psycopg2-binary
+psycopg2-binary
