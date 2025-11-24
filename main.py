@@ -1438,17 +1438,25 @@ def build_rotated_story(all_answers, story_num, num_players, player_ids):
 
 async def self_ping_task(app):
     """Self-ping every 5 minutes to keep bot alive"""
-    while True:
+    while app.running:
         try:
             await asyncio.sleep(300)  # 5 minutes
-            await app.bot.get_me()
-            logger.info("[SELF_PING] Bot pinged successfully")
+            if app.running:
+                await app.bot.get_me()
+                logger.info("[SELF_PING] Bot pinged successfully")
+        except asyncio.CancelledError:
+            logger.info("[SELF_PING] Ping task cancelled")
+            break
         except Exception as e:
             logger.error(f"[SELF_PING] Ping failed: {e}")
 
 async def post_init(app):
     """Called after bot initialization"""
     asyncio.create_task(self_ping_task(app))
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle errors"""
+    logger.error(f"Update {update} caused error {context.error}")
 
 def main() -> None:
     """Start the bot"""
@@ -1488,6 +1496,7 @@ def main() -> None:
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_error_handler(error_handler)
 
     logger.info("Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
