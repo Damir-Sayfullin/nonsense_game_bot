@@ -427,8 +427,11 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         total_games = cursor.fetchone()[0]
         
         # Games by status
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('waiting',))
+        waiting_games = cursor.fetchone()[0]
+        
         cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('in_progress',))
-        active_games = cursor.fetchone()[0]
+        in_progress_games = cursor.fetchone()[0]
         
         cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('completed',))
         completed_games = cursor.fetchone()[0]
@@ -457,15 +460,29 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         response = "👑 <b>АДМИНСКАЯ СТАТИСТИКА</b>\n\n"
         response += f"🎮 <b>Всего игр:</b> {total_games}\n"
-        response += f"  🔵 Активные: {active_games}\n"
+        response += f"  🔵 Ожидание игроков: {waiting_games}\n"
+        response += f"  🟣 В игре: {in_progress_games}\n"
         response += f"  🟢 Завершённые: {completed_games}\n"
         response += f"  🔴 Прерваны (таймаут): {timeout_games}\n"
         response += f"  ⚫ Прерваны (/reset): {reset_games}\n\n"
         
         response += f"📋 <b>ПОСЛЕДНИЕ 10 КОМНАТ:</b>\n"
         for room_code, status, created_at, created_by in last_rooms:
-            status_emoji = "🔵" if status == "in_progress" else "🔴" if status == "aborted" else "🟢" if status == "completed" else "⚫"
-            status_text = "активна" if status == "in_progress" else "таймаут" if status == "aborted" else "завершена" if status == "completed" else "сброс"
+            if status == "waiting":
+                status_emoji = "🔵"
+                status_text = "ожидание"
+            elif status == "in_progress":
+                status_emoji = "🟣"
+                status_text = "в игре"
+            elif status == "completed":
+                status_emoji = "🟢"
+                status_text = "завершена"
+            elif status == "aborted":
+                status_emoji = "🔴"
+                status_text = "таймаут"
+            else:  # reset
+                status_emoji = "⚫"
+                status_text = "сброс"
             response += f"  {status_emoji} {room_code} ({status_text})\n"
         
         response += f"\n👥 <b>УНИКАЛЬНЫЕ ИГРОКИ:</b> {len(players_activity)}\n"
