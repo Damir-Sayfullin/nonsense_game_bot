@@ -1056,6 +1056,8 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     room_code = update.message.text.strip().upper()
     user_id = update.effective_user.id
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
     
     conn = get_db_connection()
     cursor = get_cursor(conn)
@@ -1460,6 +1462,8 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return WAITING_FOR_ANSWER
     
     user_id = update.effective_user.id
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
     answer = update.message.text
     
     conn = get_db_connection()
