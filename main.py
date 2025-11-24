@@ -448,7 +448,7 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         response += f"📋 <b>ПОСЛЕДНИЕ 10 КОМНАТ:</b>\n"
         for room_code, status, created_at, created_by in last_rooms:
-            status_emoji = "🟢" if status == "in_progress" else "🔴" if status == "aborted" else "✅" if status == "completed" else "⚫"
+            status_emoji = "🔵" if status == "in_progress" else "🔴" if status == "aborted" else "🟢" if status == "completed" else "⚫"
             status_text = "активна" if status == "in_progress" else "таймаут" if status == "aborted" else "завершена" if status == "completed" else "сброс"
             response += f"  {status_emoji} {room_code} ({status_text})\n"
         
