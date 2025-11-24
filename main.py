@@ -187,7 +187,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # Count active games
+        # Count active games (in_progress)
         cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('in_progress',))
         active_games = cursor.fetchone()[0]
         
@@ -195,12 +195,16 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('completed',))
         completed_games = cursor.fetchone()[0]
         
-        # Count active rooms
+        # Count active rooms (waiting for players)
         cursor.execute('SELECT COUNT(DISTINCT room_code) FROM games WHERE status = ?', ('waiting',))
         active_rooms = cursor.fetchone()[0]
         
-        # Count unique players
-        cursor.execute('SELECT COUNT(DISTINCT user_id) FROM game_players')
+        # Count unique players who actually played completed games
+        cursor.execute('''
+            SELECT COUNT(DISTINCT gp.user_id) FROM game_players gp
+            JOIN games g ON gp.game_id = g.game_id
+            WHERE g.status = ?
+        ''', ('completed',))
         total_players = cursor.fetchone()[0]
         
         # Count total stories
@@ -208,7 +212,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         total_stories = cursor.fetchone()[0]
         
         # Count total unique rooms that played
-        cursor.execute('SELECT COUNT(DISTINCT room_code) FROM games WHERE status != ?', ('waiting',))
+        cursor.execute('SELECT COUNT(DISTINCT room_code) FROM games WHERE status = ?', ('completed',))
         rooms_played = cursor.fetchone()[0]
         
         # Get total games created
@@ -217,7 +221,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         conn.close()
         
-        response = '📊 <b>СТАТИСТИКА БОТА</b>\n\n'
+        response = '📊 <b>Я СТАТИСТИКА</b>\n\n'
         response += f'🎮 <b>Игры:</b>\n'
         response += f'  ▸ Активных: {active_games}\n'
         response += f'  ▸ Завершено: {completed_games}\n'
@@ -226,7 +230,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         response += f'  ▸ Активных: {active_rooms}\n'
         response += f'  ▸ Сыграли игры: {rooms_played}\n\n'
         response += f'👥 <b>Игроки:</b>\n'
-        response += f'  ▸ Уникальных: {total_players}\n\n'
+        response += f'  ▸ Уникальных (завершили): {total_players}\n\n'
         response += f'📚 <b>Истории:</b>\n'
         response += f'  ▸ Сохранено: {total_stories}\n'
         
@@ -1295,11 +1299,8 @@ async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
             VALUES (?, ?)
         ''', (room_code, story_text))
     
-    # Delete old game data and create new game with same room_code
+    # Keep game data for statistics, only clean up message references
     cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
-    cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (game_id,))
-    cursor.execute('DELETE FROM game_players WHERE game_id = ?', (game_id,))
-    cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
     
     # Create new game
     cursor.execute('''
