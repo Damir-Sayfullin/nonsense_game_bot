@@ -145,6 +145,9 @@ def init_db():
             )
         ''')
         
+        # Commit all table creations before migrations
+        conn.commit()
+        
         # Migration: add username column if it doesn't exist
         try:
             cursor.execute('ALTER TABLE user_activity ADD COLUMN username TEXT')
