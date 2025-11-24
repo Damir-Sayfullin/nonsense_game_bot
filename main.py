@@ -484,7 +484,7 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         response += f"  🔴 Прерваны (таймаут): {timeout_games}\n"
         response += f"  ⚫ Прерваны (/reset): {reset_games}\n\n"
         
-        response += f"📋 <b>ПОСЛЕДНИЕ 10 КОМНАТ:</b>\n"
+        response += f"📋 <b>ПОСЛЕДНИЕ 10 ИГР:</b>\n"
         for game_id, room_code, status, created_at, created_by in last_rooms:
             if status == "waiting":
                 status_emoji = "🔵"
