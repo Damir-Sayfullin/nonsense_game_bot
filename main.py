@@ -444,7 +444,7 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         # Last 10 rooms
         cursor.execute('''
-            SELECT room_code, status, created_at, created_by FROM games 
+            SELECT game_id, room_code, status, created_at, created_by FROM games 
             ORDER BY created_at DESC LIMIT 10
         ''')
         last_rooms = cursor.fetchall()
@@ -456,8 +456,6 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         ''')
         players_activity = cursor.fetchall()
         
-        conn.close()
-        
         response = "👑 <b>АДМИНСКАЯ СТАТИСТИКА</b>\n\n"
         response += f"🎮 <b>Всего игр:</b> {total_games}\n"
         response += f"  🔵 Ожидание игроков: {waiting_games}\n"
@@ -467,7 +465,7 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         response += f"  ⚫ Прерваны (/reset): {reset_games}\n\n"
         
         response += f"📋 <b>ПОСЛЕДНИЕ 10 КОМНАТ:</b>\n"
-        for room_code, status, created_at, created_by in last_rooms:
+        for game_id, room_code, status, created_at, created_by in last_rooms:
             if status == "waiting":
                 status_emoji = "🔵"
                 status_text = "ожидание"
@@ -483,7 +481,28 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:  # reset
                 status_emoji = "⚫"
                 status_text = "сброс"
+            
+            # Get players for this room
+            cursor.execute('''
+                SELECT username, first_name, is_admin FROM game_players 
+                WHERE game_id = ? ORDER BY is_admin DESC, joined_at ASC
+            ''', (game_id,))
+            players = cursor.fetchall()
+            
+            # Format players list with admin marked
+            players_list = []
+            for username, first_name, is_admin in players:
+                display_name = f"@{username}" if username else first_name
+                if is_admin:
+                    players_list.append(f"<b>{display_name}</b> 👑")
+                else:
+                    players_list.append(display_name)
+            
+            players_str = ", ".join(players_list) if players_list else "нет игроков"
             response += f"  {status_emoji} {room_code} ({status_text})\n"
+            response += f"     👥 {players_str}\n"
+        
+        conn.close()
         
         response += f"\n👥 <b>УНИКАЛЬНЫЕ ИГРОКИ:</b> {len(players_activity)}\n"
         response += f"<b>Последние 10 активных:</b>\n"
