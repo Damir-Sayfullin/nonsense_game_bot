@@ -12,7 +12,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from telegram.error import TelegramError
 
 MSK = pytz.timezone('Europe/Moscow')
-ADMIN_USER_ID = 933698505
+ADMIN_USER_ID = int(os.getenv('ADMIN_ID', '933698505'))
 
 # Global dictionary to track timeout tasks: {(game_id, user_id, question_idx): asyncio.Task}
 timeout_tasks = {}
@@ -135,6 +135,14 @@ def init_db():
                 started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_activity (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
     else:
         # SQLite syntax
         cursor.execute('''
@@ -209,11 +217,39 @@ def init_db():
                 started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_activity (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
     
     conn.commit()
     conn.close()
     logger.info("Database initialized")
 
+
+def log_user_activity(user_id):
+    """Log user activity timestamp"""
+    try:
+        conn = get_db_connection()
+        cursor = get_cursor(conn)
+        msk_time = datetime.now(MSK).strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute('SELECT id FROM user_activity WHERE user_id = ?', (user_id,))
+        exists = cursor.fetchone()
+        
+        if exists:
+            cursor.execute('UPDATE user_activity SET last_action = ? WHERE user_id = ?', (msk_time, user_id))
+        else:
+            cursor.execute('INSERT INTO user_activity (user_id, last_action) VALUES (?, ?)', (user_id, msk_time))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f'Error logging user activity: {e}')
 
 def log_bot_startup():
     """Log bot startup time to database in MSK"""
@@ -356,8 +392,81 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f'Error getting stats: {e}')
         await update.message.reply_text("❌ Ошибка при получении статистики.")
 
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show admin statistics - only for admin"""
+    user_id = update.effective_user.id
+    
+    if user_id != ADMIN_USER_ID:
+        await update.message.reply_text("❌ Эта команда доступна только админу.")
+        return
+    
+    log_user_activity(user_id)
+    
+    try:
+        conn = get_db_connection()
+        cursor = get_cursor(conn)
+        
+        # Total games
+        cursor.execute('SELECT COUNT(*) FROM games')
+        total_games = cursor.fetchone()[0]
+        
+        # Games by status
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('in_progress',))
+        active_games = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('completed',))
+        completed_games = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('aborted',))
+        timeout_games = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('reset',))
+        reset_games = cursor.fetchone()[0]
+        
+        # Last 10 rooms
+        cursor.execute('''
+            SELECT room_code, status, created_at, created_by FROM games 
+            ORDER BY created_at DESC LIMIT 10
+        ''')
+        last_rooms = cursor.fetchall()
+        
+        # Unique players with last activity
+        cursor.execute('''
+            SELECT user_id, last_action FROM user_activity 
+            ORDER BY last_action DESC
+        ''')
+        players_activity = cursor.fetchall()
+        
+        conn.close()
+        
+        response = "👑 <b>АДМИНСКАЯ СТАТИСТИКА</b>\n\n"
+        response += f"🎮 <b>Всего игр:</b> {total_games}\n"
+        response += f"  ▸ Активные: {active_games}\n"
+        response += f"  ▸ Завершённые: {completed_games}\n"
+        response += f"  ▸ Прерваны (таймаут): {timeout_games}\n"
+        response += f"  ▸ Прерваны (/reset): {reset_games}\n\n"
+        
+        response += f"📋 <b>ПОСЛЕДНИЕ 10 КОМНАТ:</b>\n"
+        for room_code, status, created_at, created_by in last_rooms:
+            status_emoji = "🟢" if status == "in_progress" else "🔴" if status == "aborted" else "✅" if status == "completed" else "⚫"
+            status_text = "активна" if status == "in_progress" else "таймаут" if status == "aborted" else "завершена" if status == "completed" else "сброс"
+            response += f"  {status_emoji} {room_code} ({status_text})\n"
+        
+        response += f"\n👥 <b>УНИКАЛЬНЫЕ ИГРОКИ:</b> {len(players_activity)}\n"
+        response += f"<b>Последние 10 активных:</b>\n"
+        for user_id_act, last_action in players_activity[:10]:
+            response += f"  ▸ ID {user_id_act}: {last_action}\n"
+        
+        await update.message.reply_text(response, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f'Error getting admin stats: {e}')
+        await update.message.reply_text("❌ Ошибка при получении статистики.")
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show available commands"""
+    user_id = update.effective_user.id
+    log_user_activity(user_id)
+    
     response = "📋 <b>ДОСТУПНЫЕ КОМАНДЫ:</b>\n\n"
     response += "<b>🎮 Игра:</b>\n"
     response += "/start - Начать новую игру\n"
@@ -367,6 +476,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     response += "<b>ℹ️ Информация:</b>\n"
     response += "/bot_uptime - Время работы бота\n"
     response += "/stats - Статистика бота\n"
+    
+    if user_id == ADMIN_USER_ID:
+        response += "\n<b>👑 Админ:</b>\n"
+        response += "/admin_stats - Админская статистика\n"
     
     await update.message.reply_text(response, parse_mode='HTML')
 
@@ -398,6 +511,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start command"""
     user_id = update.effective_user.id
+    log_user_activity(user_id)
     
     # Check if user is in an active game
     conn = get_db_connection()
@@ -1561,6 +1675,7 @@ def main() -> None:
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("bot_uptime", bot_uptime))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("admin_stats", admin_stats))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_text))
