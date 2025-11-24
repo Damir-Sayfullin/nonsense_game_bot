@@ -140,6 +140,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS user_activity (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER,
+                username TEXT,
                 last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -222,6 +223,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS user_activity (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
+                username TEXT,
                 last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -231,7 +233,7 @@ def init_db():
     logger.info("Database initialized")
 
 
-def log_user_activity(user_id):
+def log_user_activity(user_id, username=None):
     """Log user activity timestamp"""
     try:
         conn = get_db_connection()
@@ -242,9 +244,9 @@ def log_user_activity(user_id):
         exists = cursor.fetchone()
         
         if exists:
-            cursor.execute('UPDATE user_activity SET last_action = ? WHERE user_id = ?', (msk_time, user_id))
+            cursor.execute('UPDATE user_activity SET last_action = ?, username = ? WHERE user_id = ?', (msk_time, username, user_id))
         else:
-            cursor.execute('INSERT INTO user_activity (user_id, last_action) VALUES (?, ?)', (user_id, msk_time))
+            cursor.execute('INSERT INTO user_activity (user_id, username, last_action) VALUES (?, ?, ?)', (user_id, username, msk_time))
         
         conn.commit()
         conn.close()
@@ -400,7 +402,8 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("❌ Эта команда доступна только админу.")
         return
     
-    log_user_activity(user_id)
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
     
     try:
         conn = get_db_connection()
@@ -432,7 +435,7 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         # Unique players with last activity
         cursor.execute('''
-            SELECT user_id, last_action FROM user_activity 
+            SELECT user_id, username, last_action FROM user_activity 
             ORDER BY last_action DESC
         ''')
         players_activity = cursor.fetchall()
@@ -441,10 +444,10 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         response = "👑 <b>АДМИНСКАЯ СТАТИСТИКА</b>\n\n"
         response += f"🎮 <b>Всего игр:</b> {total_games}\n"
-        response += f"  ▸ Активные: {active_games}\n"
-        response += f"  ▸ Завершённые: {completed_games}\n"
-        response += f"  ▸ Прерваны (таймаут): {timeout_games}\n"
-        response += f"  ▸ Прерваны (/reset): {reset_games}\n\n"
+        response += f"  🔵 Активные: {active_games}\n"
+        response += f"  🟢 Завершённые: {completed_games}\n"
+        response += f"  🔴 Прерваны (таймаут): {timeout_games}\n"
+        response += f"  ⚫ Прерваны (/reset): {reset_games}\n\n"
         
         response += f"📋 <b>ПОСЛЕДНИЕ 10 КОМНАТ:</b>\n"
         for room_code, status, created_at, created_by in last_rooms:
@@ -454,8 +457,9 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         response += f"\n👥 <b>УНИКАЛЬНЫЕ ИГРОКИ:</b> {len(players_activity)}\n"
         response += f"<b>Последние 10 активных:</b>\n"
-        for user_id_act, last_action in players_activity[:10]:
-            response += f"  ▸ ID {user_id_act}: {last_action}\n"
+        for user_id_act, username_act, last_action in players_activity[:10]:
+            display_name = f"@{username_act}" if username_act else f"ID {user_id_act}"
+            response += f"  ▸ {display_name}: {last_action}\n"
         
         await update.message.reply_text(response, parse_mode='HTML')
     except Exception as e:
@@ -465,7 +469,8 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show available commands"""
     user_id = update.effective_user.id
-    log_user_activity(user_id)
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
     
     response = "📋 <b>ДОСТУПНЫЕ КОМАНДЫ:</b>\n\n"
     response += "<b>🎮 Игра:</b>\n"
@@ -511,7 +516,8 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start command"""
     user_id = update.effective_user.id
-    log_user_activity(user_id)
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
     
     # Check if user is in an active game
     conn = get_db_connection()
