@@ -842,12 +842,19 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     user_id = query.from_user.id
     
-    cursor.execute('''
-        INSERT INTO games (room_code, created_by, status, current_question_idx)
-        VALUES (?, ?, ?, ?)
-    ''', (room_code, user_id, 'waiting', 0))
-    
-    game_id = cursor.lastrowid
+    if USE_POSTGRES:
+        cursor.execute('''
+            INSERT INTO games (room_code, created_by, status, current_question_idx)
+            VALUES (%s, %s, %s, %s)
+            RETURNING game_id
+        ''', (room_code, user_id, 'waiting', 0))
+        game_id = cursor.fetchone()[0]
+    else:
+        cursor.execute('''
+            INSERT INTO games (room_code, created_by, status, current_question_idx)
+            VALUES (?, ?, ?, ?)
+        ''', (room_code, user_id, 'waiting', 0))
+        game_id = cursor.lastrowid
     
     cursor.execute('''
         INSERT INTO game_players (game_id, user_id, username, first_name, is_admin)
@@ -924,12 +931,19 @@ async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room
     cursor.execute('DELETE FROM games WHERE game_id = ?', (old_game_id,))
     
     # Create new game with same room code
-    cursor.execute('''
-        INSERT INTO games (room_code, created_by, status, current_question_idx)
-        VALUES (?, ?, ?, ?)
-    ''', (room_code, created_by, 'waiting', 0))
-    
-    new_game_id = cursor.lastrowid
+    if USE_POSTGRES:
+        cursor.execute('''
+            INSERT INTO games (room_code, created_by, status, current_question_idx)
+            VALUES (%s, %s, %s, %s)
+            RETURNING game_id
+        ''', (room_code, created_by, 'waiting', 0))
+        new_game_id = cursor.fetchone()[0]
+    else:
+        cursor.execute('''
+            INSERT INTO games (room_code, created_by, status, current_question_idx)
+            VALUES (?, ?, ?, ?)
+        ''', (room_code, created_by, 'waiting', 0))
+        new_game_id = cursor.lastrowid
     
     # Add players to new game with preserved admin status
     for user_id, username, first_name, is_admin in players:
