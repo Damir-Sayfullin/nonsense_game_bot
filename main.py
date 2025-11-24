@@ -1565,8 +1565,16 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         user_result = cursor.fetchone()
         conn.close()
         
-        if user_result and user_result[0] < 0:
-            await update.message.reply_text("⏳ Пока ждёшь своего вопроса, молчишь! 🤐")
+        if user_result:
+            if user_result[0] < 0:
+                await update.message.reply_text("⏳ Пока ждёшь своего вопроса, молчишь! 🤐")
+        else:
+            # User not in any game
+            await update.message.reply_text(
+                "❌ Вы не в игре.\n\n"
+                "Используйте /start, чтобы начать новую игру или присоединиться к существующей.\n\n"
+                "Если не можете найти свою комнату, используйте /reset для её сброса."
+            )
         return
     
     game_id, question_idx, player_idx = result
