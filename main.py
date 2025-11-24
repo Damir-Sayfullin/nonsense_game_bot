@@ -714,21 +714,21 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     conn = get_db_connection()
     cursor = get_cursor(conn)
     
-    # Find all games where this user is playing
+    # Find ONLY non-completed games where this user is playing
     cursor.execute('''
         SELECT g.game_id, g.room_code FROM games g
         JOIN game_players gp ON g.game_id = gp.game_id
-        WHERE gp.user_id = ?
-    ''', (user_id,))
+        WHERE gp.user_id = ? AND g.status != ?
+    ''', (user_id, 'completed'))
     
     games = cursor.fetchall()
     
     if not games:
-        await update.message.reply_text("❌ Ты не участвуешь ни в одной комнате.")
+        await update.message.reply_text("❌ Нет активных комнат для сброса.\n\nВсе твои игры завершены или уже сброшены.")
         conn.close()
         return
     
-    # Delete all games for this user by marking them as reset
+    # Delete active/broken games only (NOT completed ones)
     deleted_rooms = []
     for game_id, room_code in games:
         cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
