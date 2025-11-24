@@ -187,6 +187,13 @@ def init_db():
     conn.close()
     logger.info("Database initialized")
 
+def execute_query(cursor, query, params=()):
+    """Execute query with correct placeholder syntax for both SQLite and PostgreSQL"""
+    if USE_POSTGRES:
+        # Convert ? to %s for PostgreSQL
+        query = query.replace('?', '%s')
+    cursor.execute(query, params)
+
 def log_bot_startup():
     """Log bot startup time to database in MSK"""
     try:
@@ -344,7 +351,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show last 10 stories"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -372,7 +379,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     
     # Check if user is in an active game
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
