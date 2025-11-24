@@ -673,13 +673,13 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         conn.close()
         return
     
-    # Delete all games for this user
+    # Delete all games for this user by marking them as reset
     deleted_rooms = []
     for game_id, room_code in games:
         cursor.execute('DELETE FROM game_messages WHERE game_id = ?', (game_id,))
         cursor.execute('DELETE FROM game_answers WHERE game_id = ?', (game_id,))
         cursor.execute('DELETE FROM game_players WHERE game_id = ?', (game_id,))
-        cursor.execute('DELETE FROM games WHERE game_id = ?', (game_id,))
+        cursor.execute('UPDATE games SET status = ? WHERE game_id = ?', ('reset', game_id))
         deleted_rooms.append(room_code)
     
     conn.commit()
