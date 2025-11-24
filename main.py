@@ -77,7 +77,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS games (
                 game_id SERIAL PRIMARY KEY,
                 room_code TEXT UNIQUE,
-                created_by INTEGER,
+                created_by BIGINT,
                 status TEXT,
                 current_question_idx INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -88,7 +88,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS game_players (
                 id SERIAL PRIMARY KEY,
                 game_id INTEGER,
-                user_id INTEGER,
+                user_id BIGINT,
                 username TEXT,
                 first_name TEXT,
                 awaiting_question_idx INTEGER DEFAULT -1,
@@ -114,7 +114,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS game_messages (
                 id SERIAL PRIMARY KEY,
                 game_id INTEGER,
-                user_id INTEGER,
+                user_id BIGINT,
                 message_id INTEGER,
                 FOREIGN KEY (game_id) REFERENCES games(game_id)
             )
@@ -139,7 +139,7 @@ def init_db():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_activity (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER,
+                user_id BIGINT,
                 username TEXT,
                 last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
