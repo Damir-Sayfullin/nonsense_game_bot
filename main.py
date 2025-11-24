@@ -526,7 +526,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     response += "/start - Начать новую игру\n"
     response += "/rules - Показать правила\n"
     response += "/history - Последние 10 историй\n"
-    response += "/reset - Удалить сломанную комнату\n\n"
+    response += "/reset - Если игра сломалась (удаляет забагованную комнату)\n\n"
     response += "<b>ℹ️ Информация:</b>\n"
     response += "/bot_uptime - Время работы бота\n"
     response += "/stats - Статистика бота\n"
