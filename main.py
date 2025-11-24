@@ -247,9 +247,15 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     
     try:
-        startup_time = datetime.strptime(startup_time_str, '%Y-%m-%d %H:%M:%S')
-        startup_time = MSK.localize(startup_time)
-    except:
+        if isinstance(startup_time_str, datetime):
+            startup_time = startup_time_str
+            if startup_time.tzinfo is None:
+                startup_time = MSK.localize(startup_time)
+        else:
+            startup_time = datetime.strptime(str(startup_time_str), '%Y-%m-%d %H:%M:%S')
+            startup_time = MSK.localize(startup_time)
+    except Exception as e:
+        logger.error(f'Error processing uptime: {e}')
         await update.message.reply_text("❌ Ошибка при обработке времени.")
         return
     
@@ -270,23 +276,36 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show bot statistics"""
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Count active games (in_progress)
-        cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('in_progress',))
+        if USE_POSTGRES:
+            cursor.execute('SELECT COUNT(*) FROM games WHERE status = %s', ('in_progress',))
+        else:
+            cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('in_progress',))
         active_games = cursor.fetchone()[0]
         
         # Count completed games
-        cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('completed',))
+        if USE_POSTGRES:
+            cursor.execute('SELECT COUNT(*) FROM games WHERE status = %s', ('completed',))
+        else:
+            cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('completed',))
         completed_games = cursor.fetchone()[0]
         
         # Count unique players who actually played completed games
-        cursor.execute('''
-            SELECT COUNT(DISTINCT gp.user_id) FROM game_players gp
-            JOIN games g ON gp.game_id = g.game_id
-            WHERE g.status = ?
-        ''', ('completed',))
+        if USE_POSTGRES:
+            cursor.execute('''
+                SELECT COUNT(DISTINCT gp.user_id) FROM game_players gp
+                JOIN games g ON gp.game_id = g.game_id
+                WHERE g.status = %s
+            ''', ('completed',))
+        else:
+            cursor.execute('''
+                SELECT COUNT(DISTINCT gp.user_id) FROM game_players gp
+                JOIN games g ON gp.game_id = g.game_id
+                WHERE g.status = ?
+            ''', ('completed',))
         total_players = cursor.fetchone()[0]
         
         # Count total stories
