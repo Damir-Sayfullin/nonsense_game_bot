@@ -354,37 +354,36 @@ async def bot_uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show bot statistics"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or f"User{user_id}"
+    log_user_activity(user_id, username)
+    
     try:
         conn = get_db_connection()
         cursor = get_cursor(conn)
         
-        # Count active games (in_progress)
-        if USE_POSTGRES:
-            cursor.execute('SELECT COUNT(*) FROM games WHERE status = %s', ('in_progress',))
-        else:
-            cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('in_progress',))
-        active_games = cursor.fetchone()[0]
+        # Total games
+        cursor.execute('SELECT COUNT(*) FROM games')
+        total_games = cursor.fetchone()[0]
         
-        # Count completed games
-        if USE_POSTGRES:
-            cursor.execute('SELECT COUNT(*) FROM games WHERE status = %s', ('completed',))
-        else:
-            cursor.execute('SELECT COUNT(*) FROM games WHERE status = ?', ('completed',))
+        # Games by status
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('waiting',))
+        waiting_games = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('in_progress',))
+        in_progress_games = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('completed',))
         completed_games = cursor.fetchone()[0]
         
-        # Count unique players who actually played completed games
-        if USE_POSTGRES:
-            cursor.execute('''
-                SELECT COUNT(DISTINCT gp.user_id) FROM game_players gp
-                JOIN games g ON gp.game_id = g.game_id
-                WHERE g.status = %s
-            ''', ('completed',))
-        else:
-            cursor.execute('''
-                SELECT COUNT(DISTINCT gp.user_id) FROM game_players gp
-                JOIN games g ON gp.game_id = g.game_id
-                WHERE g.status = ?
-            ''', ('completed',))
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('aborted',))
+        timeout_games = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM games WHERE status = ?", ('reset',))
+        reset_games = cursor.fetchone()[0]
+        
+        # Count unique players who have been in any game
+        cursor.execute('SELECT COUNT(DISTINCT user_id) FROM user_activity')
         total_players = cursor.fetchone()[0]
         
         # Count total stories
@@ -393,14 +392,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         conn.close()
         
-        response = '📊 <b>СТАТИСТИКА БОТА</b>\n\n'
-        response += f'🎮 <b>Игры:</b>\n'
-        response += f'  ▸ Активные: {active_games}\n'
-        response += f'  ▸ Завершённые: {completed_games}\n\n'
-        response += f'👥 <b>Игроки:</b>\n'
-        response += f'  ▸ Всего: {total_players}\n\n'
-        response += f'📚 <b>Истории:</b>\n'
-        response += f'  ▸ Сохранено: {total_stories}\n'
+        response = "📊 <b>СТАТИСТИКА БОТА</b>\n\n"
+        response += f"🎮 <b>Всего игр:</b> {total_games}\n"
+        response += f"  🔵 Ожидание игроков: {waiting_games}\n"
+        response += f"  🟣 В игре: {in_progress_games}\n"
+        response += f"  🟢 Завершённые: {completed_games}\n"
+        response += f"  🔴 Прерваны (таймаут): {timeout_games}\n"
+        response += f"  ⚫ Прерваны (/reset): {reset_games}\n\n"
+        response += f"👥 <b>Уникальные игроки:</b> {total_players}\n\n"
+        response += f"📚 <b>Сохранено историй:</b> {total_stories}\n"
         
         await update.message.reply_text(response, parse_mode='HTML')
     except Exception as e:
