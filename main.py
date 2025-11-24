@@ -1558,17 +1558,25 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     result = cursor.fetchone()
     if not result:
         cursor.execute('''
-            SELECT awaiting_question_idx FROM game_players 
+            SELECT game_id, awaiting_question_idx, is_admin FROM game_players 
             WHERE user_id = ?
             LIMIT 1
         ''', (user_id,))
         user_result = cursor.fetchone()
-        conn.close()
         
         if user_result:
-            if user_result[0] < 0:
-                await update.message.reply_text("⏳ Пока ждёшь своего вопроса, молчишь! 🤐")
+            game_id, awaiting_idx, is_admin = user_result
+            if awaiting_idx < 0:
+                if is_admin:
+                    message = "⏳ Ждём начала игры.\n\n" \
+                              "Ты админ комнаты. Нажми кнопку '▶️ Начать игру' или используй /reset."
+                else:
+                    message = "⏳ Ждём начала игры.\n\n" \
+                              "Ожидаем, когда админ начнёт игру, или используй /reset."
+                await update.message.reply_text(message)
+            conn.close()
         else:
+            conn.close()
             # User not in any game
             await update.message.reply_text(
                 "❌ Вы не в игре.\n\n"
