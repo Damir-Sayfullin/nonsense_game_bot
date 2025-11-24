@@ -1,0 +1,19 @@
+2025-11-24 20:27:19,727 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 0 to 3 players
+2025-11-24 20:27:19,711 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=0, total_questions=6
+2025-11-24 20:27:36,477 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=1, total_questions=6
+2025-11-24 20:27:36,495 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 1 to 3 players
+2025-11-24 20:27:49,938 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=2, total_questions=6
+2025-11-24 20:27:49,955 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 2 to 3 players
+2025-11-24 20:27:57,673 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=3, total_questions=6
+2025-11-24 20:27:57,691 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 3 to 3 players
+2025-11-24 20:28:16,139 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=4, total_questions=6
+2025-11-24 20:28:16,158 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 4 to 3 players
+2025-11-24 20:28:39,182 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Sending question 5 to 3 players
+2025-11-24 20:28:39,164 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=5, total_questions=6
+2025-11-24 20:28:52,541 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] Called with game_id=5, question_idx=6, total_questions=6
+2025-11-24 20:28:52,576 - __main__ - INFO - [SEND_QUESTION_TO_PLAYERS] All questions answered! Calling generate_stories
+2025-11-24 20:28:52,600 - __main__ - ERROR - Update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='Эльвира', id=5040984506, type=<ChatType.PRIVATE>, username='elv_amirova'), date=datetime.datetime(2025, 11, 24, 20, 28, 41, tzinfo=<UTC>), delete_chat_photo=False, from_user=User(first_name='Эльвира', id=5040984506, is_bot=False, language_code='ru', username='elv_amirova'), group_chat_created=False, message_id=3127, supergroup_chat_created=False, text='их отправили в ссылку'), update_id=90425539) caused error duplicate key value violates unique constraint "games_room_code_key"
+2025-11-24 20:28:52,576 - __main__ - INFO - [GENERATE_STORIES] Called with game_id=5
+2025-11-24 20:28:52,591 - __main__ - INFO - [GENERATE_STORIES] Found 3 players: [(8, 933698505, 'Дамир'), (9, 5040984506, 'Эльвира'), (10, 770432711, 'Ильсаф')]
+2025-11-24 20:28:52,592 - __main__ - INFO - [GENERATE_STORIES] Found 18 answers
+2025-11-24 20:28:52,593 - __main__ - INFO - [GENERATE_STORIES] Room code: F5PL

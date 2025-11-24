@@ -148,6 +148,13 @@ def init_db():
         # Commit all table creations before migrations
         conn.commit()
         
+        # Migration: drop old UNIQUE constraint if it exists
+        try:
+            cursor.execute('ALTER TABLE games DROP CONSTRAINT games_room_code_key')
+            conn.commit()
+        except Exception:
+            pass
+        
         # Create partial unique index for waiting games only
         try:
             cursor.execute('''
