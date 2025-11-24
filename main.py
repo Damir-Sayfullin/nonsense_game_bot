@@ -533,7 +533,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     
     if user_id == ADMIN_USER_ID:
         response += "\n<b>👑 Админ:</b>\n"
-        response += "/admin_stats - Админская статистика\n"
+        response += "/admin_stats - Статистика для админа\n"
     
     await update.message.reply_text(response, parse_mode='HTML')
 
