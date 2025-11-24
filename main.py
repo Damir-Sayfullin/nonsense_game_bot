@@ -1185,7 +1185,33 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     player_count = cursor.fetchone()[0]
     
     if player_count < 2:
-        await query.edit_message_text("❌ Нужно минимум 2 игрока для начала игры.")
+        # Get player list for error message
+        cursor.execute('''
+            SELECT first_name, is_admin FROM game_players WHERE game_id = ? ORDER BY joined_at
+        ''', (game_id,))
+        players = cursor.fetchall()
+        
+        players_list = ""
+        for first_name, is_admin in players:
+            if is_admin:
+                players_list += f"• {first_name} 👑\n"
+            else:
+                players_list += f"• {first_name}\n"
+        players_list = players_list.strip()
+        
+        # Edit message to show error but keep room info
+        error_message = f"🎮 <b>Комната создана!</b>\n\n" \
+                       f"🔑 Код комнаты: <code>{room_code}</code>\n\n" \
+                       f"👥 Игроки ({len(players)}):\n{players_list}\n\n" \
+                       f"⚠️ <b>Нужно минимум 2 игрока для начала игры.</b>"
+        
+        keyboard = [
+            [InlineKeyboardButton("▶️ Начать игру", callback_data='start_game')],
+            [InlineKeyboardButton("❌ Выйти", callback_data='leave_game')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(error_message, reply_markup=reply_markup, parse_mode='HTML')
         conn.close()
         return
     
