@@ -27,93 +27,161 @@ DB_FILE = 'game_data.db'
 DATABASE_URL = os.getenv('DATABASE_URL')
 USE_POSTGRES = DATABASE_URL is not None
 
-def init_db():
-    """Initialize database"""
+def get_db_connection():
+    """Get database connection"""
     if USE_POSTGRES:
         try:
             import psycopg2
-            conn = psycopg2.connect(DATABASE_URL)
-            cursor = conn.cursor()
+            return psycopg2.connect(DATABASE_URL)
         except Exception as e:
             logger.error(f"Failed to connect to PostgreSQL: {e}. Falling back to SQLite")
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
+            return sqlite3.connect(DB_FILE)
     else:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
+        return sqlite3.connect(DB_FILE)
+
+def init_db():
+    """Initialize database"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS games (
-            game_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room_code TEXT UNIQUE,
-            created_by INTEGER,
-            status TEXT,
-            current_question_idx INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS game_players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            game_id INTEGER,
-            user_id INTEGER,
-            username TEXT,
-            first_name TEXT,
-            awaiting_question_idx INTEGER DEFAULT -1,
-            is_admin INTEGER DEFAULT 0,
-            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (game_id) REFERENCES games(game_id)
-        )
-    ''')
-    
-    try:
-        cursor.execute('ALTER TABLE game_players ADD COLUMN awaiting_question_idx INTEGER DEFAULT -1')
-    except sqlite3.OperationalError:
-        pass
-    
-    try:
-        cursor.execute('ALTER TABLE game_players ADD COLUMN is_admin INTEGER DEFAULT 0')
-    except sqlite3.OperationalError:
-        pass
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS game_answers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            game_id INTEGER,
-            question_idx INTEGER,
-            player_idx INTEGER,
-            answer TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (game_id) REFERENCES games(game_id)
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS game_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            game_id INTEGER,
-            user_id INTEGER,
-            message_id INTEGER,
-            FOREIGN KEY (game_id) REFERENCES games(game_id)
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS story_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room_code TEXT,
-            story_text TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS bot_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+    if USE_POSTGRES:
+        # PostgreSQL syntax
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS games (
+                game_id SERIAL PRIMARY KEY,
+                room_code TEXT UNIQUE,
+                created_by INTEGER,
+                status TEXT,
+                current_question_idx INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_players (
+                id SERIAL PRIMARY KEY,
+                game_id INTEGER,
+                user_id INTEGER,
+                username TEXT,
+                first_name TEXT,
+                awaiting_question_idx INTEGER DEFAULT -1,
+                is_admin INTEGER DEFAULT 0,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_answers (
+                id SERIAL PRIMARY KEY,
+                game_id INTEGER,
+                question_idx INTEGER,
+                player_idx INTEGER,
+                answer TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_messages (
+                id SERIAL PRIMARY KEY,
+                game_id INTEGER,
+                user_id INTEGER,
+                message_id INTEGER,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS story_history (
+                id SERIAL PRIMARY KEY,
+                room_code TEXT,
+                story_text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_sessions (
+                id SERIAL PRIMARY KEY,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+    else:
+        # SQLite syntax
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS games (
+                game_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_code TEXT UNIQUE,
+                created_by INTEGER,
+                status TEXT,
+                current_question_idx INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER,
+                user_id INTEGER,
+                username TEXT,
+                first_name TEXT,
+                awaiting_question_idx INTEGER DEFAULT -1,
+                is_admin INTEGER DEFAULT 0,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        ''')
+        
+        try:
+            cursor.execute('ALTER TABLE game_players ADD COLUMN awaiting_question_idx INTEGER DEFAULT -1')
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute('ALTER TABLE game_players ADD COLUMN is_admin INTEGER DEFAULT 0')
+        except sqlite3.OperationalError:
+            pass
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER,
+                question_idx INTEGER,
+                player_idx INTEGER,
+                answer TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER,
+                user_id INTEGER,
+                message_id INTEGER,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS story_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_code TEXT,
+                story_text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
     
     conn.commit()
     conn.close()
@@ -122,10 +190,13 @@ def init_db():
 def log_bot_startup():
     """Log bot startup time to database in MSK"""
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         msk_time = datetime.now(MSK).strftime('%Y-%m-%d %H:%M:%S')
-        cursor.execute('INSERT INTO bot_sessions (started_at) VALUES (?)', (msk_time,))
+        if USE_POSTGRES:
+            cursor.execute('INSERT INTO bot_sessions (started_at) VALUES (%s)', (msk_time,))
+        else:
+            cursor.execute('INSERT INTO bot_sessions (started_at) VALUES (?)', (msk_time,))
         conn.commit()
         conn.close()
         logger.info('Bot startup logged to database')
@@ -135,9 +206,12 @@ def log_bot_startup():
 def get_bot_uptime():
     """Get bot startup time"""
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT started_at FROM bot_sessions ORDER BY started_at DESC LIMIT 1')
+        if USE_POSTGRES:
+            cursor.execute('SELECT started_at FROM bot_sessions ORDER BY started_at DESC LIMIT 1')
+        else:
+            cursor.execute('SELECT started_at FROM bot_sessions ORDER BY started_at DESC LIMIT 1')
         result = cursor.fetchone()
         conn.close()
         
