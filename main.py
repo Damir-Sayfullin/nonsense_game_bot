@@ -27,17 +27,49 @@ DB_FILE = 'game_data.db'
 DATABASE_URL = os.getenv('DATABASE_URL')
 USE_POSTGRES = DATABASE_URL is not None
 
+class CursorWrapper:
+    """Wrapper for cursor that converts SQLite ? placeholders to PostgreSQL %s"""
+    def __init__(self, cursor, is_postgres):
+        self.cursor = cursor
+        self.is_postgres = is_postgres
+    
+    def execute(self, query, params=()):
+        if self.is_postgres:
+            query = query.replace('?', '%s')
+        return self.cursor.execute(query, params)
+    
+    def fetchone(self):
+        return self.cursor.fetchone()
+    
+    def fetchall(self):
+        return self.cursor.fetchall()
+    
+    def __getattr__(self, name):
+        return getattr(self.cursor, name)
+
 def get_db_connection():
     """Get database connection"""
     if USE_POSTGRES:
         try:
             import psycopg2
-            return psycopg2.connect(DATABASE_URL)
+            conn = psycopg2.connect(DATABASE_URL)
+            # Wrap cursor to handle placeholder conversion
+            original_cursor = conn.cursor
+            def cursor_wrapper(*args, **kwargs):
+                return CursorWrapper(original_cursor(*args, **kwargs), True)
+            conn.cursor = cursor_wrapper
+            return conn
         except Exception as e:
             logger.error(f"Failed to connect to PostgreSQL: {e}. Falling back to SQLite")
             return sqlite3.connect(DB_FILE)
     else:
-        return sqlite3.connect(DB_FILE)
+        conn = sqlite3.connect(DB_FILE)
+        # Wrap cursor for consistency
+        original_cursor = conn.cursor
+        def cursor_wrapper(*args, **kwargs):
+            return CursorWrapper(original_cursor(*args, **kwargs), False)
+        conn.cursor = cursor_wrapper
+        return conn
 
 def init_db():
     """Initialize database"""
@@ -187,12 +219,6 @@ def init_db():
     conn.close()
     logger.info("Database initialized")
 
-def execute_query(cursor, query, params=()):
-    """Execute query with correct placeholder syntax for both SQLite and PostgreSQL"""
-    if USE_POSTGRES:
-        # Convert ? to %s for PostgreSQL
-        query = query.replace('?', '%s')
-    cursor.execute(query, params)
 
 def log_bot_startup():
     """Log bot startup time to database in MSK"""
@@ -444,7 +470,7 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """Reset broken game - delete room entirely (available for all players)"""
     user_id = update.effective_user.id
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Find all games where this user is playing
@@ -527,7 +553,7 @@ def get_players_list_text(game_id, conn):
 async def update_room_players(game_id, room_code, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Update all players in room with current player list"""
     logger.info(f"[UPDATE_ROOM_PLAYERS] Called with game_id={game_id}, room_code={room_code}")
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Get game status
@@ -642,7 +668,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # If we have a room code, check if we're the creator and can restart it
     if room_code:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT created_by FROM games WHERE room_code = ? AND status = 'completed'
@@ -661,7 +687,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Otherwise, create a brand new game
     room_code = generate_room_code()
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     user_id = query.from_user.id
@@ -701,7 +727,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     
     # Store message ID for future edits
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO game_messages (game_id, user_id, message_id)
@@ -714,7 +740,7 @@ async def start_new_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def start_new_game_in_room(query, context: ContextTypes.DEFAULT_TYPE, room_code: str) -> None:
     """Start a new game in an existing room (after completion)"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -796,7 +822,7 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     room_code = update.message.text.strip().upper()
     user_id = update.effective_user.id
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -848,7 +874,7 @@ async def receive_room_code(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     
     # Store message ID for this player (delete old one first if exists)
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM game_messages WHERE game_id = ? AND user_id = ?', (game_id, user_id))
     cursor.execute('''
@@ -874,7 +900,7 @@ async def leave_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text("❌ Комната не найдена")
         return
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -935,7 +961,7 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text("❌ Комната не найдена")
         return
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -978,7 +1004,7 @@ async def start_game_session(query, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def end_game_due_to_inactivity(game_id, inactive_user_id, inactive_first_name, context: ContextTypes.DEFAULT_TYPE) -> None:
     """End game because a player was inactive"""
     logger.info(f"[INACTIVITY] Ending game {game_id} due to inactivity of {inactive_first_name}")
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Check if game is already aborted - if so, don't process again
@@ -1084,7 +1110,7 @@ async def cancel_player_timeout(game_id, user_id, question_idx) -> None:
 async def send_question_to_players(game_id, question_idx, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send current question to all players"""
     logger.info(f"[SEND_QUESTION_TO_PLAYERS] Called with game_id={game_id}, question_idx={question_idx}, total_questions={len(QUESTIONS)}")
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -1116,7 +1142,7 @@ async def send_question_to_players(game_id, question_idx, context: ContextTypes.
     conn.close()
     
     # Now send messages AFTER closing database
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     for user_id, first_name, player_id in updates:
@@ -1173,7 +1199,7 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     answer = update.message.text
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -1257,7 +1283,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id = update.effective_user.id
     answer = update.message.text
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -1344,7 +1370,7 @@ async def handle_any_text(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def generate_stories(game_id, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate and send multiple rotated stories to all players"""
     logger.info(f"[GENERATE_STORIES] Called with game_id={game_id}")
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
