@@ -594,26 +594,32 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show last 10 stories"""
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
+    # conn = get_db_connection()
+    # cursor = get_cursor(conn)
     
-    cursor.execute('''
-        SELECT story_text, created_at FROM story_history 
-        ORDER BY created_at DESC LIMIT 10
-    ''')
+    # cursor.execute('''
+    #     SELECT story_text, created_at FROM story_history 
+    #     ORDER BY created_at DESC LIMIT 10
+    # ''')
     
-    stories = cursor.fetchall()
-    conn.close()
+    # stories = cursor.fetchall()
+    # conn.close()
     
-    if not stories:
-        await update.message.reply_text("📚 Нет сохраненных историй")
-        return
+    # if not stories:
+    #     await update.message.reply_text("📚 Нет сохраненных историй")
+    #     return
     
-    message = "📚 <b>ПОСЛЕДНИЕ 10 ИСТОРИЙ:</b>\n\n"
-    for idx, (story_text, created_at) in enumerate(stories, 1):
-        # Format: first letter capital, rest lowercase
-        formatted_story = story_text[0].upper() + story_text[1:].lower() if story_text else ""
-        message += f"{idx}. {formatted_story}\n\n"
+    # message = "📚 <b>ПОСЛЕДНИЕ 10 ИСТОРИЙ:</b>\n\n"
+    # for idx, (story_text, created_at) in enumerate(stories, 1):
+    #     # Format: first letter capital, rest lowercase
+    #     formatted_story = story_text[0].upper() + story_text[1:].lower() if story_text else ""
+    #     message += f"{idx}. {formatted_story}\n\n"
+
+    message = (
+        "❌ <b>Вывод последних историй отключен</b>\n\n"
+        "К сожалению, в историях появилось много нецензурных выражений и неприемлемого контента.\n\n"
+        "Чтобы в игру могли комфортно играть как взрослые, так и дети, эта команда теперь недоступна 🚫"
+    )
     
     await update.message.reply_text(message, parse_mode='HTML')
 
